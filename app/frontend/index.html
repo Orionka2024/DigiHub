@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KVK iXBRL v2 Workspace</title>
+  <meta name="description" content="KVK iXBRL v2 – filing-grade XBRL tagging workspace for Dutch annual reports.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ── Top Ribbon ─────────────────────────────────────────────────────── -->
+  <header class="workspace-ribbon">
+    <div class="ribbon-left">
+      <div class="brand-icon">⬡</div>
+      <div class="brand-text">
+        <span class="brand-name">KVK iXBRL v2</span>
+        <span class="brand-tag" id="entityStatusLabel">No Entity Set</span>
+      </div>
+
+      <!-- Filing state pill -->
+      <span id="statePill" class="state-pill draft" style="margin-left: 1rem;">Draft</span>
+
+      <!-- User selector -->
+      <div style="margin-left: 1.25rem; display: flex; align-items: center; gap: 0.4rem;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <select id="userSelector" class="form-input" style="padding: 0.25rem 0.5rem; font-size: 0.78rem; height: 26px; width: 155px;" onchange="workspace.handleUserChange()">
+          <option value="preparer">Jane (Preparer)</option>
+          <option value="reviewer">John (Reviewer)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="ribbon-center" id="navStatus">Ready</div>
+
+    <div class="ribbon-right">
+      <!-- Log book -->
+      <button class="ribbon-btn" onclick="workspace.showLogBook()" id="btnLogBook" disabled title="Audit Log Book">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        Log
+      </button>
+
+      <button class="ribbon-btn" onclick="workspace.newFiling()" title="Save this filing and begin another">New filing</button>
+
+      <!-- Load workspace -->
+      <button class="ribbon-btn" onclick="workspace.loadWorkspacePrompt()" id="btnLoadSession" title="Load saved workspace">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Load
+      </button>
+
+      <!-- Save workspace -->
+      <button class="ribbon-btn" onclick="workspace.saveWorkspace()" id="btnSaveSession" disabled title="Save workspace">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Save
+      </button>
+
+      <div class="ribbon-divider"></div>
+
+      <!-- Entity Info -->
+      <button class="ribbon-btn" onclick="workspace.openEntityModal()" title="Entity & taxonomy settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        Entity Info
+      </button>
+
+      <div class="ribbon-divider"></div>
+
+      <!-- Upload DOCX -->
+      <input type="file" id="docUpload" accept=".docx" style="display:none" onchange="workspace.handleFileUpload(event)">
+      <button class="ribbon-btn" onclick="document.getElementById('docUpload').click()" title="Upload a .docx financial statement">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Load DOCX
+      </button>
+
+      <!-- Diagnostics / validate -->
+      <button class="ribbon-btn" onclick="workspace.runDiagnostics()" id="btnDiagnostics" disabled title="Run XBRL validation">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Diagnostics
+      </button>
+
+      <button class="ribbon-btn primary" onclick="workspace.openSignOffWizard()" id="btnFreeze" disabled title="Sign-Off and Freeze snapshot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Sign-Off & Freeze
+      </button>
+
+      <button class="ribbon-btn" id="btnReopen" disabled onclick="workspace.reopenFiling()">Reopen for editing</button>
+
+      <!-- Export / validate-and-package -->
+      <button class="ribbon-btn" onclick="workspace.independentValidation()" title="Download Arelle diagnostics; does not approve filing">Arelle checks</button>
+      <button class="ribbon-btn" onclick="workspace.exportPackage(true)" title="Validated report plus provider handoff evidence">Provider handoff</button>
+      <button class="ribbon-btn primary" onclick="workspace.exportPackage()" id="btnExport" disabled title="Validate and download SBR report package">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export SBR
+      </button>
+    </div>
+  </header>
+
+  <div id="readinessNotice" role="status" class="readiness-banner" onclick="workspace.showReadiness()" style="padding:6px 16px;background:#fff7df;color:#704d00;font-size:12px;cursor:pointer;display:none;"></div>
+  <!-- ── Three-panel workspace ────────────────────────────────────────────── -->
+  <div class="workspace-layout">
+
+    <!-- Left: Document Map & Checklist -->
+    <aside class="sidebar-left">
+      <div style="display:flex; flex-direction: column; height: 100%;">
+        <div style="flex: 1; overflow-y: auto;">
+          <div class="sidebar-header">Document Map</div>
+          <div class="sidebar-content" id="documentMap">
+            <div class="empty-state">Upload a document to view the navigation map.</div>
+          </div>
+        </div>
+        <div style="flex: 1; overflow-y: auto; border-top: 1px solid var(--border-color);">
+          <div class="sidebar-header" style="border-top: none;">Tagging review</div>
+          <div style="padding:10px; display:grid; gap:8px;">
+            <div id="taggingProfile" style="font-size:12px;overflow-wrap:anywhere"></div>
+            <button class="btn-primary" onclick="workspace.autoTagDocument()">Suggest tags for document</button>
+            <p style="font-size:12px;margin:0">Review each suggestion before it is saved. Suggestions currently cover table amounts.</p>
+            <select id="checklistFilter" class="form-input" aria-label="Tag list filter" onchange="workspace.renderChecklist()">
+              <option value="outstanding">Needs review</option><option value="mandatory">Required by parsed rules</option>
+              <option value="conditional">Conditional</option><option value="mapped">Reviewed / tagged</option><option value="all">All available tags</option>
+            </select>
+            <input id="checklistSearch" class="form-input" placeholder="Search tags…" aria-label="Search tags" oninput="workspace.renderChecklist()">
+            <div id="checklistSummary" style="font-size:12px"></div>
+          </div>
+          <div class="sidebar-content" id="checklistContainer">
+            <div class="empty-state">Set entity and taxonomy to see required tags.</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Centre: Document Viewer -->
+    <main class="main-viewer">
+      <!-- Colour-Coded Legend -->
+      <div style="display: flex; gap: 1rem; justify-content: center; margin-bottom: 1rem; font-size: 0.8rem; color: #475569;">
+        <span style="display: flex; align-items: center; gap: 0.25rem;"><span style="display:inline-block; width: 12px; height: 12px; border: 2px solid var(--accent-green); background: rgba(22, 163, 74, 0.1); border-radius: 2px;"></span> Tagged</span>
+        <span style="display: flex; align-items: center; gap: 0.25rem;"><span style="display:inline-block; width: 12px; height: 12px; border: 2px solid var(--accent-blue); background: rgba(37, 99, 235, 0.1); border-radius: 2px;"></span> Selected</span>
+        <span style="display: flex; align-items: center; gap: 0.25rem;"><span style="display:inline-block; width: 12px; height: 12px; border: 1px solid #ccc; background: white; border-radius: 2px;"></span> Untagged</span>
+      </div>
+      <div id="documentViewer" class="doc-container">
+        <div class="empty-state" style="margin-top: 120px; text-align: center;">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" style="margin-bottom: 1rem;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <p style="color:#94a3b8; font-family: var(--font-ui);">No document loaded.<br>Use <strong>Load DOCX</strong> to begin.</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- Right: XBRL Tag Inspector -->
+    <aside class="sidebar-right">
+      <div class="sidebar-header">
+        XBRL Tag Inspector
+        <span id="tagCount" class="chip blue" style="margin-left: 0.5rem; float: right;">0 tags</span>
+      </div>
+      <div class="sidebar-content" id="inspectorPanel">
+        <div class="empty-state">Select a node in the document to inspect and tag it.</div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ── Entity Info Modal ────────────────────────────────────────────────── -->
+  <div id="entityModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="min-width: 520px;">
+      <div class="modal-header">
+        <span class="modal-title">Entity & Taxonomy</span>
+        <button class="modal-close" onclick="workspace.closeEntityModal()" aria-label="Close">✕</button>
+      </div>
+
+      <div class="grid-gap">
+        <!-- KVK -->
+        <div>
+          <label for="kvkInput">KVK Number</label>
+          <div style="display:flex; gap: 0.5rem;">
+            <input type="text" id="kvkInput" class="form-input" placeholder="e.g. 34282528" maxlength="8">
+            <button class="btn-secondary" onclick="workspace.lookupKvk()" style="white-space:nowrap;">Lookup</button>
+          </div>
+        </div>
+
+        <!-- Entity name -->
+        <div>
+          <label for="entityNameInput">Entity Name</label>
+          <input type="text" id="entityNameInput" class="form-input" placeholder="Automatically filled on lookup">
+        </div>
+
+        <!-- Period -->
+        <div class="grid-2">
+          <div>
+            <label for="periodStartInput">Period Start</label>
+            <input type="date" id="periodStartInput" class="form-input" value="2024-01-01">
+          </div>
+          <div>
+            <label for="periodEndInput">Period End</label>
+            <input type="date" id="periodEndInput" class="form-input" value="2024-12-31">
+          </div>
+        </div>
+
+        <!-- Taxonomy -->
+        <div class="grid-2">
+          <div>
+            <label for="taxonomyIdInput">Taxonomy ID</label>
+            <select id="taxonomyIdInput" class="form-input form-select" onchange="workspace.handleTaxonomyChange()">
+              <option value="NT21_KVK_20261209_b">NT21_KVK_20261209_b (NT21 Taxonomy 2026)</option>
+            </select>
+          </div>
+          <div>
+            <label for="entryPointInput">Company size and reporting profile</label>
+            <select id="entryPointInput" class="form-input form-select" onchange="workspace.handleEntryPointChange()">
+              <option value="">Choose the applicable reporting profile…</option>
+              <option value="groot_nlgaap">Groot – NL-GAAP</option>
+              <option value="middelgroot_nlgaap">Middelgroot – NL-GAAP</option>
+              <option value="klein_nlgaap">Klein – NL-GAAP</option>
+              <option value="micro_nlgaap">Micro – NL-GAAP</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="workspace.closeEntityModal()">Cancel</button>
+        <button class="btn-primary" onclick="workspace.saveEntityModal()">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Diagnostics Modal ─────────────────────────────────────────────────── -->
+  <div id="diagnosticsModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="width: 760px; max-width: 94vw;">
+      <div class="modal-header">
+        <span class="modal-title">XBRL Diagnostics</span>
+        <button class="modal-close" onclick="document.getElementById('diagnosticsModal').style.display='none'">✕</button>
+      </div>
+      <div id="diagFilterTabs" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+        <button class="diag-filter-btn active" data-filter="all" onclick="workspace.filterDiagnostics('all')">All</button>
+        <button class="diag-filter-btn" data-filter="error" onclick="workspace.filterDiagnostics('error')">Errors (<span id="diagErrCount">0</span>)</button>
+        <button class="diag-filter-btn" data-filter="warning" onclick="workspace.filterDiagnostics('warning')">Warnings (<span id="diagWarnCount">0</span>)</button>
+      </div>
+      <div id="diagnosticsContent" style="max-height: 55vh; overflow-y: auto; font-size: 0.85rem;">
+        <div class="loading-pulse" style="padding: 2rem; text-align: center; color: #6b7280;">Running validation…</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('diagnosticsModal').style.display='none'">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Submission Readiness Modal ────────────────────────────────────────── -->
+  <div id="readinessModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="width: 600px; max-width: 90vw;">
+      <div class="modal-header">
+        <span class="modal-title">Submission Readiness</span>
+        <button class="modal-close" onclick="document.getElementById('readinessModal').style.display='none'">✕</button>
+      </div>
+      <div id="readinessContent" style="max-height: 60vh; overflow-y: auto; padding: 1rem; font-size: 0.9rem;">
+        <div class="loading-pulse" style="text-align: center; color: #6b7280;">Fetching status…</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('readinessModal').style.display='none'">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Completion / Sign-Off Wizard ──────────────────────────────────────── -->
+  <div id="completionModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="min-width: 480px;">
+      <div class="modal-header">
+        <span class="modal-title">Sign-Off & Freeze</span>
+        <button class="modal-close" onclick="document.getElementById('completionModal').style.display='none'">✕</button>
+      </div>
+
+      <div class="grid-gap">
+        <div>
+          <label>Filing Status</label>
+          <div style="display:flex; gap: 1rem; margin-top: 0.5rem;">
+            <label style="display:flex; align-items:center; gap:0.3rem;"><input type="radio" name="signoffFinal" value="false" checked> Draft</label>
+            <label style="display:flex; align-items:center; gap:0.3rem;"><input type="radio" name="signoffFinal" value="true"> Final Approved</label>
+          </div>
+        </div>
+
+        <div>
+          <label for="signoffName">Signatory Name (Accountant/Director)</label>
+          <input type="text" id="signoffName" class="form-input" placeholder="e.g. John Doe">
+        </div>
+
+        <div>
+          <label for="signoffDate">Approval Date</label>
+          <input type="date" id="signoffDate" class="form-input">
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('completionModal').style.display='none'">Cancel</button>
+        <button class="btn-primary" onclick="workspace.submitSignOff()">Freeze Snapshot</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tag Inspector – Map Fact Modal ────────────────────────────────────── -->
+  <div id="mapFactModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="min-width: 480px;">
+      <div class="modal-header">
+        <span class="modal-title">Map XBRL Fact</span>
+        <button class="modal-close" onclick="workspace.cancelTagReview()">✕</button>
+      </div>
+
+      <div class="grid-gap">
+        <!-- Source value (read-only) -->
+        <div>
+          <label>Extracted Text</label>
+          <div id="mapSourceText" class="inspector-value" style="font-size: 0.9rem; word-break: break-word;"></div>
+        </div>
+
+        <!-- QName -->
+        <div>
+          <label for="mapQname">Taxonomy Concept (QName)</label>
+          <input type="text" id="mapQname" class="form-input" list="tagConceptOptions" placeholder="Search a label or enter a taxonomy tag">
+          <datalist id="tagConceptOptions"></datalist>
+        </div>
+
+        <!-- Kind -->
+        <div class="grid-2">
+          <div>
+            <label for="mapKind">Data Kind</label>
+            <select id="mapKind" class="form-input form-select" onchange="workspace.updateMapKind()">
+              <option value="text">text</option>
+              <option value="numeric">numeric</option>
+              <option value="boolean">boolean</option>
+              <option value="date">date</option>
+            </select>
+          </div>
+          <div id="mapValueGroup">
+            <label for="mapValue">Value</label>
+            <input type="text" id="mapValue" class="form-input" placeholder="Overwrite value if needed">
+          </div>
+        </div>
+
+        <!-- Numeric extras -->
+        <div id="numericExtras" class="grid-2" style="display:none;">
+          <div>
+            <label for="numericLocale">Number format</label>
+            <select id="numericLocale" class="form-input"><option value="nl">Dutch: 1.234,56</option><option value="en">English: 1,234.56</option></select>
+            <label for="mapUnit">Unit (e.g. iso4217:EUR)</label>
+            <input type="text" id="mapUnit" class="form-input" value="iso4217:EUR">
+          </div>
+          <div>
+            <label for="mapDecimals">Decimals</label>
+            <input type="number" id="mapDecimals" class="form-input" value="-3">
+          </div>
+        </div>
+
+        <!-- Context -->
+        <div class="grid-2">
+          <div>
+            <label for="mapContextId">Context ID</label>
+            <select id="mapContextId" class="form-input form-select">
+              <option value="">Choose the reporting period…</option>
+              <option value="ctx_current">ctx_current (Current Year)</option>
+              <option value="ctx_prior">ctx_prior (Prior Year)</option>
+              <option value="ctx_instant_prior">Prior year end (instant)</option>
+              <option value="ctx_instant_end">ctx_instant_end (Instant)</option>
+            </select>
+          </div>
+          <div>
+            <label for="mapReviewer">Reviewer</label>
+            <input type="text" id="mapReviewer" class="form-input" placeholder="Name of approving reviewer">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="workspace.cancelTagReview()">Close review</button>
+        <button class="btn-secondary" id="skipSuggestion" style="display:none" onclick="workspace.skipSuggestion()">Skip suggestion</button>
+        <button class="btn-primary" onclick="workspace.submitMapFact()">Confirm Tag</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Log Book Modal ────────────────────────────────────────────────────── -->
+  <div id="logBookModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="width: 580px; max-width: 94vw;">
+      <div class="modal-header">
+        <span class="modal-title">Audit Log Book</span>
+        <button class="modal-close" onclick="document.getElementById('logBookModal').style.display='none'">✕</button>
+      </div>
+      <div id="logBookContent" style="max-height: 65vh; overflow-y: auto; font-size: 0.82rem;"></div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('logBookModal').style.display='none'">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Hover Tooltip ─────────────────────────────────────────────────────── -->
+  <div id="hoverTooltip" class="hover-tooltip" style="display:none;"></div>
+
+  <!-- ── Context Menu ──────────────────────────────────────────────────────── -->
+  <div id="contextMenu" class="context-menu" style="display:none;">
+    <div class="context-menu-item" onclick="workspace.handleContextMenuTag()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:0.5rem;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      Tag as XBRL concept…
+    </div>
+  </div>
+
+  <script src="workspace.js"></script>
+</body>
+</html>

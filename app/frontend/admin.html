@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Taxonomy Admin — KVK iXBRL v2</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { padding: 20px; }
+    h1 { margin-bottom: 20px; }
+    .admin-container {
+      display: flex;
+      gap: 20px;
+    }
+    .panel {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      flex: 1;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #eee;
+      padding: 8px;
+      text-align: left;
+    }
+    th { background: #f9f9f9; }
+    .status-badge {
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .status-mandatory { background: #fee2e2; color: #991b1b; }
+    .status-conditional { background: #fef3c7; color: #92400e; }
+    .status-optional { background: #e0e7ff; color: #3730a3; }
+    .search-box {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <h1>Taxonomy Admin</h1>
+    <a href="index.html" class="button">Back to App</a>
+  </div>
+
+  <div class="admin-container">
+    <div class="panel" style="flex: 1;">
+      <h2>Installed Taxonomies</h2>
+      <table id="taxonomies-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Version</th>
+            <th>Concepts</th>
+            <th>Entry Points</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="5">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="panel" style="flex: 2;">
+      <h2>Taxonomy Explorer</h2>
+      <p id="explorer-status">Select a taxonomy from the left to view concepts and rules.</p>
+      
+      <div id="explorer-content" style="display: none;">
+        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+          <select id="ep-select" style="padding: 8px; flex: 1;">
+            <option value="">All Entry Points</option>
+          </select>
+          <input type="text" id="concept-search" class="search-box" placeholder="Search concepts (e.g. Assets)..." style="flex: 2; margin-bottom: 0;">
+        </div>
+        
+        <div style="max-height: 600px; overflow-y: auto;">
+          <table id="concepts-table">
+            <thead>
+              <tr>
+                <th>Prefix</th>
+                <th>Name</th>
+                <th>Label (NL)</th>
+                <th>Status</th>
+                <th>Conditions</th>
+              </tr>
+            </thead>
+            <tbody>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>

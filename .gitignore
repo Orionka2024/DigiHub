@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# Pytest
+.pytest_cache/
+.coverage
+
+# Environment variables (do not commit secrets)
+.env
+
+# Application Data
+app/data/
+*.docx
+*.pdf
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# Taxonomies and Credentials
+users.json
+nt21_*
+NT21_*
+taxonomie/
+taxonomy/
+checklist_result.jsonusers.json
+users.json
+
+users.json
+nt21_*
+taxonomie/
+taxonomy/
+NT21_*
+checklist_result.json
