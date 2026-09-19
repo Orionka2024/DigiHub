@@ -367,11 +367,14 @@ window.workspace = {
       if (data.found && data.entity_name) {
         document.getElementById('entityNameInput').value = data.entity_name;
         this.setNavStatus(`Found: ${data.entity_name}`);
+      } else if (data.source === 'unconfigured') {
+        // KVK API key not set — this is expected in hosted demo mode
+        this.setNavStatus('KVK lookup unavailable — enter entity name manually', 'warning');
       } else {
         this.setNavStatus(data.error || 'KVK number not found', 'error');
       }
     } catch (e) {
-      this.setNavStatus('Lookup failed', 'error');
+      this.setNavStatus('Lookup failed — enter entity name manually', 'error');
     }
   },
 
