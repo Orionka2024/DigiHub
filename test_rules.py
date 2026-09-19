@@ -1,5 +1,5 @@
-from KVK_v2.app.main import taxonomy_registry
-from KVK_v2.taxonomy.rules import MandatoryStatus
+from app.main import taxonomy_registry
+from taxonomy.rules import MandatoryStatus
 
 rel = taxonomy_registry.get("NT21_KVK_20261209_b")
 

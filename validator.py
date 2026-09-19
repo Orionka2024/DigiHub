@@ -14,9 +14,9 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from KVK_v2.registry import TaxonomyRelease, EnrichedTaxonomyRelease
+    from registry import TaxonomyRelease, EnrichedTaxonomyRelease
 
-from KVK_v2.models import Context, Fact, FilingSnapshot, Unit
+from models import Context, Fact, FilingSnapshot, Unit
 
 
 @dataclass
@@ -254,7 +254,7 @@ def _check_concept_validity(
 ) -> list[ValidationIssue]:
     """D: All fact qnames must be in the active entry point."""
     issues: list[ValidationIssue] = []
-    from KVK_v2.registry import EnrichedTaxonomyRelease
+    from registry import EnrichedTaxonomyRelease
     if not isinstance(taxonomy, EnrichedTaxonomyRelease):
         return issues  # Can't check without enriched taxonomy
 
@@ -293,7 +293,7 @@ def _check_period_type(
 ) -> list[ValidationIssue]:
     """E: Period type of context must match concept's periodType."""
     issues: list[ValidationIssue] = []
-    from KVK_v2.registry import EnrichedTaxonomyRelease
+    from registry import EnrichedTaxonomyRelease
     if not isinstance(taxonomy, EnrichedTaxonomyRelease):
         return issues
 
@@ -327,7 +327,7 @@ def _check_unit_type(
 ) -> list[ValidationIssue]:
     """F: Monetary concepts must have a currency unit; pure concepts no unit."""
     issues: list[ValidationIssue] = []
-    from KVK_v2.registry import EnrichedTaxonomyRelease
+    from registry import EnrichedTaxonomyRelease
     if not isinstance(taxonomy, EnrichedTaxonomyRelease):
         return issues
 
@@ -374,7 +374,7 @@ def _check_calculations(
 ) -> list[ValidationIssue]:
     """G: Calculation linkbase — parent should equal weighted sum of children."""
     issues: list[ValidationIssue] = []
-    from KVK_v2.registry import EnrichedTaxonomyRelease
+    from registry import EnrichedTaxonomyRelease
     if not isinstance(taxonomy, EnrichedTaxonomyRelease):
         return issues
 
@@ -405,8 +405,8 @@ def _check_mandatory_facts(
 ) -> list[ValidationIssue]:
     """I/J: Check mandatory and conditional facts from the rules engine."""
     issues: list[ValidationIssue] = []
-    from KVK_v2.registry import EnrichedTaxonomyRelease
-    from KVK_v2.taxonomy.rules import MandatoryStatus
+    from registry import EnrichedTaxonomyRelease
+    from taxonomy.rules import MandatoryStatus
 
     if not isinstance(taxonomy, EnrichedTaxonomyRelease) or taxonomy.rules_engine is None:
         # Fall back to legacy requirements check
@@ -417,7 +417,7 @@ def _check_mandatory_facts(
     rules = taxonomy.rules_engine.get_rules_for_entry_point(ep_key)
 
     for rule in rules:
-        from KVK_v2.taxonomy.rules import RuleType
+        from taxonomy.rules import RuleType
         if rule.rule_type != RuleType.EXISTENCE:
             continue
         if not rule.concept_qname:

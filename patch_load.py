@@ -6,7 +6,7 @@ with open("app/main.py", "r") as f:
 old_code = """            # If requirements are not in manifest, parse them dynamically!
             req_dict = {}
             if "requirements" not in manifest and package_path.is_dir():
-                from KVK_v2.taxonomy_parser import TaxonomyParser
+                from taxonomy_parser import TaxonomyParser
                 catalog_path = package_path / "META-INF" / "catalog.xml"
                 parser = TaxonomyParser(package_path, catalog_path if catalog_path.exists() else None)
                 
@@ -28,9 +28,9 @@ old_code = """            # If requirements are not in manifest, parse them dyna
 
 new_code = """            # If requirements are not in manifest, parse them dynamically!
             if "requirements" not in manifest and package_path.is_dir():
-                from KVK_v2.taxonomy_parser import TaxonomyParser
-                from KVK_v2.taxonomy.rules import RulesEngine
-                from KVK_v2.registry import EnrichedTaxonomyRelease
+                from taxonomy_parser import TaxonomyParser
+                from taxonomy.rules import RulesEngine
+                from registry import EnrichedTaxonomyRelease
                 
                 catalog_path = package_path / "META-INF" / "catalog.xml"
                 parser = TaxonomyParser(package_path, catalog_path if catalog_path.exists() else None)

@@ -23,7 +23,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Sequence
 
-from KVK_v2.models import Context, Fact, FilingSnapshot, Unit
+from models import Context, Fact, FilingSnapshot, Unit
 
 
 # ---------------------------------------------------------------------------

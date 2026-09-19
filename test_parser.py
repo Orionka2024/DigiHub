@@ -1,6 +1,6 @@
 from pathlib import Path
-from KVK_v2.taxonomy_parser import TaxonomyParser
-from KVK_v2.taxonomy.rules import MandatoryStatus
+from taxonomy_parser import TaxonomyParser
+from taxonomy.rules import MandatoryStatus
 
 pkg = Path("app/data/taxonomies/nt21_kvk_20261209.b - taxonomyPackage")
 catalog = pkg / "META-INF" / "catalog.xml"

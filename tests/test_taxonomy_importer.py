@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from KVK_v2.taxonomy_parser import TaxonomyParser
+from taxonomy_parser import TaxonomyParser
 
 
 def schema(path, prefix, name, imports=''):

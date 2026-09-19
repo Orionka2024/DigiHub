@@ -1,6 +1,6 @@
-from KVK_v2.app.store import store
-from KVK_v2.registry import taxonomy_registry
-from KVK_v2.autotagger import recommend_tags, _camel_to_words, _clean_text
+from app.store import store
+from registry import taxonomy_registry
+from autotagger import recommend_tags, _camel_to_words, _clean_text
 
 snap = store.load_from_disk("34254022")
 doc = store.get_document(snap.document_sha256)

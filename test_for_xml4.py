@@ -24,7 +24,7 @@ for cf in root.iter("{http://xbrl.org/2008/filter/concept}conceptName"):
 for ns_uri, ns_pair in [("http://www.nltaxonomie.nl/nt21/jenv/20261209.b/dictionary/jenv-bw2-data", 
                           "jenv-bw2-data")]:
     # Find XSD for this namespace via catalog
-    from KVK_v2.taxonomy_parser import CatalogResolver
+    from taxonomy_parser import CatalogResolver
     catalog_path = pkg / "META-INF" / "catalog.xml"
     resolver = CatalogResolver(catalog_path)
     result = resolver.resolve(ns_uri + ".xsd")

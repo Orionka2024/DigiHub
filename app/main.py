@@ -25,21 +25,21 @@ from fastapi.staticfiles import StaticFiles
 
 # Core KVK_v2 library — uses relative imports internally, so we must import
 # via the package path (KVK_v2.xxx) when PYTHONPATH=/Users/.../Documents
-from KVK_v2.docx_extract import extract_docx
-from KVK_v2.mapping import MappingDecision, fact_from_decision
-from KVK_v2.autotagger import recommend_tags
-from KVK_v2.models import Context, Dimension, FilingSnapshot, FilingState, Unit
-from KVK_v2.registry import TaggingRequirement, TaxonomyRelease, TaxonomyRegistry
-from KVK_v2.service import ExportBlocked, FilingService, configured_external_validator
-from KVK_v2.validator import ValidationIssue, validate_snapshot, validate_xml
-from KVK_v2.app.models_api import (
+from docx_extract import extract_docx
+from mapping import MappingDecision, fact_from_decision
+from autotagger import recommend_tags
+from models import Context, Dimension, FilingSnapshot, FilingState, Unit
+from registry import TaggingRequirement, TaxonomyRelease, TaxonomyRegistry
+from service import ExportBlocked, FilingService, configured_external_validator
+from validator import ValidationIssue, validate_snapshot, validate_xml
+from app.models_api import (
     AddSectionIn, ContextIn, DimensionIn, ExtractedDocumentOut,
     KvkLookupOut, MapFactIn, MapFactOut, MappingDecisionIn,
     ReviewRequirementIn, RunOut, SnapshotCreateIn, SnapshotOut,
     SourceNodeOut, TaxonomyReleaseIn, ValidateOut, ValidationIssueOut,
     WorkspaceOut, WorkspaceSaveIn, FreezeIn, AutoTagRequest, AutoTagResponse
 )
-from KVK_v2.app.store import store
+from app.store import store
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from KVK_v2.app.auth import auth_router, get_current_user
+from app.auth import auth_router, get_current_user
 app.include_router(auth_router)
 
 @app.middleware("http")
@@ -99,8 +99,8 @@ _taxonomy_errors: list[str] = []
 
 
 def _parse_release_ep(release, ep_key):
-    from KVK_v2.taxonomy_parser import TaxonomyParser
-    from KVK_v2.taxonomy.rules import RulesEngine
+    from taxonomy_parser import TaxonomyParser
+    from taxonomy.rules import RulesEngine
     from copy import deepcopy
     status_key = f"{release.id}:{ep_key}"
     _ep_loading_status[status_key] = "loading"
@@ -139,8 +139,8 @@ def _parse_release_ep(release, ep_key):
 
 
 def _load_verified_taxonomies() -> None:
-    from KVK_v2.registry import EnrichedTaxonomyRelease
-    from KVK_v2.taxonomy.rules import RulesEngine
+    from registry import EnrichedTaxonomyRelease
+    from taxonomy.rules import RulesEngine
     for manifest_path in _TAXONOMY_DIR.glob("*.json"):
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -155,7 +155,7 @@ def _load_verified_taxonomies() -> None:
             verified = package.is_file()
             digest = ""
             if verified:
-                from KVK_v2.taxonomy_package import extract_verified
+                from taxonomy_package import extract_verified
                 digest = manifest.get("sha256", "")
                 package = extract_verified(package, digest, _TAXONOMY_DIR / ".extracted")
             if package.is_dir():
@@ -248,8 +248,8 @@ async def health() -> dict:
 
 # ── Taxonomy endpoints ─────────────────────────────────────────────────────────
 
-from KVK_v2.registry import EnrichedTaxonomyRelease
-from KVK_v2.app.models_api import (
+from registry import EnrichedTaxonomyRelease
+from app.models_api import (
     EnrichedTaxonomyReleaseOut, ConceptMetadataOut, ValidationRuleOut,
     ChecklistSectionOut, ChecklistItemOut, SelectEntryPointOut
 )
@@ -506,7 +506,7 @@ async def extract(file: UploadFile = File(...)) -> ExtractedDocumentOut:
 # ── Snapshot lifecycle ─────────────────────────────────────────────────────────
 
 def _snap_out(snap: FilingSnapshot, warnings: list[str] | None = None) -> SnapshotOut:
-    from KVK_v2.app.store import _snapshot_to_dict
+    from app.store import _snapshot_to_dict
     saved = _snapshot_to_dict(snap)
     try:
         doc = store.get_document(snap.document_sha256)
@@ -786,16 +786,16 @@ async def validate_and_package(filing_id: str) -> StreamingResponse:
 
 @app.get("/api/submission/readiness")
 def submission_readiness():
-    from KVK_v2.submission import readiness
-    from KVK_v2.arelle_validator import capabilities
+    from submission import readiness
+    from arelle_validator import capabilities
     return {**readiness(), "validator": capabilities()}
 
 
 @app.post("/api/snapshot/{filing_id}/independent-validation")
 def independent_validation(filing_id: str):
     """Diagnostic only; does not freeze, validate or authorize a submission."""
-    from KVK_v2.arelle_validator import diagnose
-    from KVK_v2.generator import generate_ixbrl
+    from arelle_validator import diagnose
+    from generator import generate_ixbrl
     try:
         snap = store.get(filing_id)
         taxonomy = taxonomy_registry.get(snap.taxonomy_id)
@@ -819,7 +819,7 @@ def independent_validation(filing_id: str):
 
 @app.post("/api/snapshot/{filing_id}/provider-handoff")
 def provider_handoff(filing_id: str):
-    from KVK_v2.submission import create_handoff
+    from submission import create_handoff
     try:
         snap = store.get(filing_id)
         payload = filing_service.validate_and_package(snap, store.get_document(snap.document_sha256))

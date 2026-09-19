@@ -17,9 +17,9 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from KVK_v2.taxonomy.concept import ConceptMetadata
-    from KVK_v2.taxonomy.rules import RulesEngine, ValidationRule, ChecklistSection
-    from KVK_v2.models import FilingSnapshot
+    from taxonomy.concept import ConceptMetadata
+    from taxonomy.rules import RulesEngine, ValidationRule, ChecklistSection
+    from models import FilingSnapshot
 
 
 @dataclass(frozen=True)

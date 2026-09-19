@@ -10,16 +10,16 @@ import pytest
 from docx import Document
 from fastapi.testclient import TestClient
 
-from KVK_v2.models import Context, Fact, FilingSnapshot, FilingState, SourceRef, Unit
-from KVK_v2.registry import TaxonomyRegistry, TaxonomyRelease, EnrichedTaxonomyRelease
-from KVK_v2.service import FilingService, ExportBlocked
-from KVK_v2.mapping import MappingDecision, fact_from_decision
-from KVK_v2.docx_extract import ExtractedDocument, SourceNode
-from KVK_v2.autotagger import parse_number, recommend_tags
-from KVK_v2.app.store import WorkspaceStore, _snapshot_to_dict, _snapshot_from_dict
-from KVK_v2.validator import validate_snapshot, validate_xml
-from KVK_v2.taxonomy.concept import ConceptMetadata, CalcRelationship
-from KVK_v2.taxonomy.rules import RulesEngine
+from models import Context, Fact, FilingSnapshot, FilingState, SourceRef, Unit
+from registry import TaxonomyRegistry, TaxonomyRelease, EnrichedTaxonomyRelease
+from service import FilingService, ExportBlocked
+from mapping import MappingDecision, fact_from_decision
+from docx_extract import ExtractedDocument, SourceNode
+from autotagger import parse_number, recommend_tags
+from app.store import WorkspaceStore, _snapshot_to_dict, _snapshot_from_dict
+from validator import validate_snapshot, validate_xml
+from taxonomy.concept import ConceptMetadata, CalcRelationship
+from taxonomy.rules import RulesEngine
 
 
 def snapshot():
@@ -299,7 +299,7 @@ def test_malformed_docx_is_a_client_error(api):
 
 
 def test_reviewed_conditional_checklist_is_satisfied():
-    from KVK_v2.taxonomy.rules import ValidationRule, RuleType, MandatoryStatus
+    from taxonomy.rules import ValidationRule, RuleType, MandatoryStatus
     rel=enriched(); snap=snapshot(); snap.facts=[]
     for rid in ('r1','r2'):
         rel.rules_engine.add_rule(ValidationRule(rid,RuleType.EXISTENCE,MandatoryStatus.CONDITIONAL,'t:Flag',entry_points=('ep',)))

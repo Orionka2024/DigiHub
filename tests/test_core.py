@@ -6,10 +6,10 @@ import json
 import unittest
 import zipfile
 
-from KVK_v2.models import Context, Fact, FilingSnapshot, SourceRef, Unit
-from KVK_v2.registry import TaggingRequirement, TaxonomyRegistry, TaxonomyRelease
-from KVK_v2.service import ExportBlocked, FilingService
-from KVK_v2.docx_extract import ExtractedDocument, SourceNode
+from models import Context, Fact, FilingSnapshot, SourceRef, Unit
+from registry import TaggingRequirement, TaxonomyRegistry, TaxonomyRelease
+from service import ExportBlocked, FilingService
+from docx_extract import ExtractedDocument, SourceNode
 
 
 class FilingCoreTests(unittest.TestCase):

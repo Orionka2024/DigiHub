@@ -1,6 +1,6 @@
 from types import SimpleNamespace
-from KVK_v2.autotagger import recommend_tags
-from KVK_v2.docx_extract import SourceNode
+from autotagger import recommend_tags
+from docx_extract import SourceNode
 
 
 def concept(qname, nl, en, period='instant'):

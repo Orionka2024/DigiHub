@@ -34,15 +34,15 @@ from typing import Any
 from lxml import etree as ET
 from hashlib import sha256
 
-from KVK_v2.taxonomy.concept import (
+from taxonomy.concept import (
     CalcRelationship,
     ConceptMetadata,
     DimensionRelationship,
     PresentationRelationship,
     Reference,
 )
-from KVK_v2.taxonomy.rules import MandatoryStatus, RuleType, ValidationRule
-from KVK_v2.registry import TaggingRequirement
+from taxonomy.rules import MandatoryStatus, RuleType, ValidationRule
+from registry import TaggingRequirement
 
 # ---------------------------------------------------------------------------
 # XML namespace constants

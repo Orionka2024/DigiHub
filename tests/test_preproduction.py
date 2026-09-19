@@ -6,12 +6,12 @@ import zipfile
 
 import pytest
 
-from KVK_v2.arelle_validator import capabilities, diagnose, validate_report
-from KVK_v2.taxonomy_package import extract_verified
-from KVK_v2.submission import readiness, create_handoff
-from KVK_v2.package import create_report_package
-from KVK_v2.tests.test_regressions import snapshot, registry, document, api
-from KVK_v2.service import FilingService
+from arelle_validator import capabilities, diagnose, validate_report
+from taxonomy_package import extract_verified
+from submission import readiness, create_handoff
+from package import create_report_package
+from tests.test_regressions import snapshot, registry, document, api
+from service import FilingService
 
 
 def test_real_arelle_rejects_bad_xml_and_plain_html():

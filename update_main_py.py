@@ -6,8 +6,8 @@ with open("app/main.py", "r") as f:
 # Define the new endpoints
 new_endpoints = """# ── Taxonomy endpoints ─────────────────────────────────────────────────────────
 
-from KVK_v2.registry import EnrichedTaxonomyRelease
-from KVK_v2.app.models_api import (
+from registry import EnrichedTaxonomyRelease
+from app.models_api import (
     EnrichedTaxonomyReleaseOut, ConceptMetadataOut, ValidationRuleOut,
     ChecklistSectionOut, SelectEntryPointOut
 )
@@ -162,7 +162,7 @@ async def get_checklist(taxonomy_id: str, entry_point_key: str, filing_id: str =
         rel = taxonomy_registry.get_enriched(taxonomy_id)
         snap = None
         if filing_id:
-            from KVK_v2.app.store import store
+            from app.store import store
             try:
                 snap = store.get(filing_id)
             except KeyError:

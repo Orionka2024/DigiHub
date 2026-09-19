@@ -1,9 +1,9 @@
 import pytest
 from datetime import date
-from KVK_v2.models import FilingSnapshot, Fact, SourceRef
-from KVK_v2.validator import validate_snapshot
-from KVK_v2.registry import EnrichedTaxonomyRelease
-from KVK_v2.taxonomy.rules import RulesEngine, ValidationRule, MandatoryStatus, RuleType
+from models import FilingSnapshot, Fact, SourceRef
+from validator import validate_snapshot
+from registry import EnrichedTaxonomyRelease
+from taxonomy.rules import RulesEngine, ValidationRule, MandatoryStatus, RuleType
 
 @pytest.fixture
 def dummy_taxonomy():
@@ -43,7 +43,7 @@ def dummy_snapshot():
     snap.signatory_name = "Signatory"
     snap.approval_date = date(2026, 12, 31)
     # Add dummy context and fact so SBR tests don't fail immediately
-    from KVK_v2.models import Context
+    from models import Context
     snap.contexts.append(Context("ctx1", "http://www.kvk.nl/kvk-id", "12345678", instant=date(2026, 12, 31)))
     snap.facts.append(Fact("f1", "kvk:OtherConcept", "ctx1", "test", "text", SourceRef("a" * 64, "body paragraph 1", "test", "Reviewer")))
     return snap

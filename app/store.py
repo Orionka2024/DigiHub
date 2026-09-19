@@ -16,10 +16,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from KVK_v2.models import (
+from models import (
     Context, Dimension, Fact, FilingSnapshot, FilingState, SourceRef, Unit,
 )
-from KVK_v2.docx_extract import ExtractedDocument, SourceNode, Run
+from docx_extract import ExtractedDocument, SourceNode, Run
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
