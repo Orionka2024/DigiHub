@@ -4,9 +4,49 @@
     {
       "src": "api/index.py",
       "use": "@vercel/python"
+    },
+    {
+      "src": "app/frontend/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/login.html",
+      "dest": "app/frontend/login.html"
+    },
+    {
+      "src": "/admin.html",
+      "dest": "app/frontend/admin.html"
+    },
+    {
+      "src": "/login.js",
+      "dest": "app/frontend/login.js"
+    },
+    {
+      "src": "/workspace.js",
+      "dest": "app/frontend/workspace.js"
+    },
+    {
+      "src": "/admin.js",
+      "dest": "app/frontend/admin.js"
+    },
+    {
+      "src": "/style.css",
+      "dest": "app/frontend/style.css"
+    },
+    {
+      "src": "/(.*\\.(js|css|html|ico|png|jpg|svg))",
+      "dest": "app/frontend/$1"
+    },
+    {
+      "src": "/",
+      "dest": "app/frontend/index.html"
+    },
     {
       "src": "/(.*)",
       "dest": "api/index.py"
