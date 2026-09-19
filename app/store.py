@@ -163,7 +163,8 @@ def _snapshot_from_dict(data: dict) -> FilingSnapshot:
 
 # ── Store ──────────────────────────────────────────────────────────────────────
 
-_DATA_DIR = Path(__file__).parent / "data"
+_DATA_DIR = Path(os.environ.get("KVK_DATA_DIR", str(Path(__file__).parent / "data")))
+
 
 
 class WorkspaceStore:
