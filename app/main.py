@@ -87,6 +87,16 @@ async def auth_middleware(request, call_next):
             
     return await call_next(request)
 
+
+# ── Root page ──────────────────────────────────────────────────────────────────
+
+@app.get("/")
+async def root():
+    """Serve the workspace. Auth middleware already redirects unauthenticated requests."""
+    from fastapi.responses import HTMLResponse
+    index_path = Path(__file__).parent / "frontend" / "index.html"
+    return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
+
 # ── Taxonomy registry ──────────────────────────────────────────────────────────
 
 taxonomy_registry = TaxonomyRegistry()

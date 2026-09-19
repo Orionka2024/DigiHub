@@ -75,7 +75,7 @@ def login(login_data: LoginRequest, response: Response):
     
     if not users:
         # If no users configured, block all logins or allow a default? Let's block.
-        raise HTTPException(status_code=500, detail="No users configured in the system.")
+        raise HTTPException(status_code=401, detail="No users configured in the system.")
         
     hashed_password = users.get(login_data.username)
     if not hashed_password or not verify_password(login_data.password, hashed_password):
