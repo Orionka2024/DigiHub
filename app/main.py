@@ -99,11 +99,8 @@ _taxonomy_errors: list[str] = []
 
 
 def _parse_release_ep(release, ep_key):
-    try:
-        from taxonomy_parser import TaxonomyParser
-        from taxonomy.rules import RulesEngine
-    except ModuleNotFoundError:
-        return
+    from taxonomy_parser import TaxonomyParser
+    from taxonomy.rules import RulesEngine
     from copy import deepcopy
     status_key = f"{release.id}:{ep_key}"
     _ep_loading_status[status_key] = "loading"
@@ -142,12 +139,8 @@ def _parse_release_ep(release, ep_key):
 
 
 def _load_verified_taxonomies() -> None:
-    try:
-        from registry import EnrichedTaxonomyRelease
-        from taxonomy.rules import RulesEngine
-    except ModuleNotFoundError:
-        # taxonomy module not available in this deployment environment (e.g. Vercel)
-        return
+    from registry import EnrichedTaxonomyRelease
+    from taxonomy.rules import RulesEngine
     for manifest_path in _TAXONOMY_DIR.glob("*.json"):
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -164,7 +157,11 @@ def _load_verified_taxonomies() -> None:
             if verified:
                 from taxonomy_package import extract_verified
                 digest = manifest.get("sha256", "")
-                package = extract_verified(package, digest, _TAXONOMY_DIR / ".extracted")
+                
+                # Extract to /tmp/taxonomy_extracted on Vercel since /var/task is read-only
+                import os
+                extraction_base = Path("/tmp/taxonomy_extracted") if os.environ.get("VERCEL") else (_TAXONOMY_DIR / ".extracted")
+                package = extract_verified(package, digest, extraction_base)
             if package.is_dir():
                 # Directories are useful for browsing, but are never checksum-verified releases.
                 release = EnrichedTaxonomyRelease(

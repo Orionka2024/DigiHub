@@ -15,7 +15,7 @@ ENV/
 .env
 
 # Application Data
-app/data/
+app/data/.extracted/
 *.docx
 *.pdf
 
@@ -27,16 +27,13 @@ app/data/
 
 # Taxonomies and Credentials
 users.json
-nt21_*
-NT21_*
-taxonomie/
-taxonomy/
-checklist_result.jsonusers.json
-users.json
-
-users.json
-nt21_*
-taxonomie/
-taxonomy/
-NT21_*
 checklist_result.json
+
+# Exclude raw/unzipped NT21 taxonomy packages (too large)
+nt21_*
+NT21_*
+
+# But allow compiled taxonomy assets needed by the app
+!app/data/taxonomies/*.json
+!app/data/taxonomies/*.zip
+!taxonomy/

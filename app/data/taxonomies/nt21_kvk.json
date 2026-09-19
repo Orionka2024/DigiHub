@@ -1,0 +1,224 @@
+{
+  "id": "NT21_KVK_20261209_b",
+  "name": "De Kamer van Koophandel Taxonomie 21",
+  "version": "20261209.b",
+  "publication_date": "2026-08-07",
+  "reporting_year": 2026,
+  "reporting_date": "2026-12-31",
+  "authority": "KVK / SBR Programma",
+  "status": "final",
+  "package_file": "taxonomy.zip",
+  "identifier": "http://www.nltaxonomie.nl/nt21",
+  "entry_points": {
+    "micro_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-micro.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - micro rechtspersonen",
+      "company_class": "micro",
+      "framework": "nlgaap",
+      "sector": "general",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "micro_nlgaap_pub": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-micro-publicatiestukken.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - micro rechtspersonen - publicatiestukken",
+      "company_class": "micro",
+      "framework": "nlgaap",
+      "sector": "general",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "klein_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-klein.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - kleine rechtspersonen",
+      "company_class": "klein",
+      "framework": "nlgaap",
+      "sector": "general",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "klein_nlgaap_pub": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-klein-publicatiestukken.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - kleine rechtspersonen - publicatiestukken",
+      "company_class": "klein",
+      "framework": "nlgaap",
+      "sector": "general",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "klein_nlgaap_vert": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-klein-verticaal.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - kleine rechtspersonen - verticale balans",
+      "company_class": "klein",
+      "framework": "nlgaap",
+      "sector": "general",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "middelgroot_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-middelgroot.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - middelgrote rechtspersonen",
+      "company_class": "middelgroot",
+      "framework": "nlgaap",
+      "sector": "general",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "middelgroot_nlgaap_plus": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-middelgroot-plus.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - middelgrote rechtspersonen - plus",
+      "company_class": "middelgroot",
+      "framework": "nlgaap",
+      "sector": "general",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "middelgroot_nlgaap_pub": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-middelgroot-publicatiestukken.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - middelgrote rechtspersonen - publicatiestukken",
+      "company_class": "middelgroot",
+      "framework": "nlgaap",
+      "sector": "general",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "groot_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-groot.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - grote rechtspersonen",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "general",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "groot_nlgaap_vert": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-groot-verticaal.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - grote rechtspersonen - verticale balans",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "general",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "banken_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-banken.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - banken",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "bank",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "verzekeringsmaatschappijen_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-verzekeringsmaatschappijen.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - verzekeringsmaatschappijen",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "insurer",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "beleggingsentiteiten_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-beleggingsentiteiten.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - beleggingsentiteiten",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "investment",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "pensioenfondsen_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-pensioenfondsen.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - pensioenfondsen",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "pension",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "premiepensioeninstellingen_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-premiepensioeninstellingen.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - premiepensioeninstellingen",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "pension",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "cooperaties_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-cooperaties.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - co\u00f6peraties",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "cooperative",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "stichtingen_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-stichtingen.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - stichtingen",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "foundation",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "zorginstellingen_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-zorginstellingen.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - zorginstellingen",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "healthcare",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "organisaties_zonder_winststreven_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-organisaties-zonder-winststreven.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - organisaties zonder winststreven",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "nonprofit",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "cv_vof_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-cv-vof.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - CV en VoF",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "general",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "fondsenwervende_organisaties_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-fondsenwervende-organisaties.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - fondsenwervende organisaties",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "fundraising",
+      "consolidation": "both",
+      "domain": "kvk"
+    },
+    "toegelaten_instellingen_volkshuisvesting_nlgaap": {
+      "file": "taxonomie/www.nltaxonomie.nl/nt21/kvk/20261209.b/entrypoints/kvk-rpt-jaarverantwoording-2026-nlgaap-toegelaten-instellingen-volkshuisvesting.xsd",
+      "name": "KvK: Jaarverantwoording 2026 NLGAAP - toegelaten instellingen volkshuisvesting",
+      "company_class": "groot",
+      "framework": "nlgaap",
+      "sector": "housing",
+      "consolidation": "both",
+      "domain": "kvk"
+    }
+  },
+  "namespaces": {
+    "kvk-i": "http://www.nltaxonomie.nl/nt21/kvk/20261209.b/dictionary/kvk-data",
+    "jenv-bw2-i": "http://www.nltaxonomie.nl/nt21/jenv/20261209.b/dictionary/jenv-bw2-data",
+    "rj-i": "http://www.nltaxonomie.nl/nt21/rj/20261209.b/dictionary/rj-data",
+    "xbrli": "http://www.xbrl.org/2003/instance",
+    "ix": "http://www.xbrl.org/2013/inlineXBRL",
+    "link": "http://www.xbrl.org/2003/linkbase",
+    "xbrldi": "http://xbrl.org/2006/xbrldi"
+  },
+  "entity_scheme": "http://www.kvk.nl/kvk-id",
+  "currency": "EUR",
+  "package_filename": "taxonomy.zip"
+}
