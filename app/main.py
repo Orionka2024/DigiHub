@@ -99,8 +99,11 @@ _taxonomy_errors: list[str] = []
 
 
 def _parse_release_ep(release, ep_key):
-    from taxonomy_parser import TaxonomyParser
-    from taxonomy.rules import RulesEngine
+    try:
+        from taxonomy_parser import TaxonomyParser
+        from taxonomy.rules import RulesEngine
+    except ModuleNotFoundError:
+        return
     from copy import deepcopy
     status_key = f"{release.id}:{ep_key}"
     _ep_loading_status[status_key] = "loading"
@@ -139,8 +142,12 @@ def _parse_release_ep(release, ep_key):
 
 
 def _load_verified_taxonomies() -> None:
-    from registry import EnrichedTaxonomyRelease
-    from taxonomy.rules import RulesEngine
+    try:
+        from registry import EnrichedTaxonomyRelease
+        from taxonomy.rules import RulesEngine
+    except ModuleNotFoundError:
+        # taxonomy module not available in this deployment environment (e.g. Vercel)
+        return
     for manifest_path in _TAXONOMY_DIR.glob("*.json"):
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
