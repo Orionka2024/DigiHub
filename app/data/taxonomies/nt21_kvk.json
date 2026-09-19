@@ -6,7 +6,8 @@
   "reporting_year": 2026,
   "reporting_date": "2026-12-31",
   "authority": "KVK / SBR Programma",
-  "status": "final",
+  "status": "beta",
+  "sha256": "5d648d0185f31eb7f12dffc1e6771eeddb061ff59147e0dd50ebfe118dfda89e",
   "package_file": "taxonomy.zip",
   "identifier": "http://www.nltaxonomie.nl/nt21",
   "entry_points": {

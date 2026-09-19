@@ -46,18 +46,24 @@ from app.store import store
 app = FastAPI(title="KVK iXBRL v2 Filing Platform", version="2.0.0")
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
-# Locked to localhost only. This is a local development tool; cross-origin
-# access from arbitrary origins is not appropriate even in development.
-# To allow a specific remote front-end, set ALLOWED_ORIGIN in the environment.
+# On Vercel, frontend and API share the same origin so CORS is not needed.
+# For local dev or custom deployments, allow the configured origin.
 _ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:8000")
+_VERCEL_URL = os.environ.get("VERCEL_URL", "")  # automatically set by Vercel
+
+_allowed_origins = [
+    _ALLOWED_ORIGIN,
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+]
+if _VERCEL_URL:
+    _allowed_origins.append(f"https://{_VERCEL_URL}")
+# Canonical deployment URL
+_allowed_origins.append("https://digi-hub-xi.vercel.app")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        _ALLOWED_ORIGIN,
-        "http://127.0.0.1:8000",
-        "http://localhost:8000",
-    ],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"],
     allow_headers=["*"],

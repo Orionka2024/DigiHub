@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 import jwt
@@ -9,9 +10,18 @@ from pydantic import BaseModel
 from typing import Optional
 
 # JWT configuration
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-secret-key-change-me-in-production")
+_DEV_SECRET = "dev-secret-key-change-me-in-production"
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", _DEV_SECRET)
+if SECRET_KEY == _DEV_SECRET:
+    logging.warning(
+        "[AUTH] JWT_SECRET_KEY is not set — using insecure development default. "
+        "Set JWT_SECRET_KEY in Vercel Environment Variables before accepting real users."
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 week
+
+# Detect HTTPS deployment (Vercel always serves HTTPS)
+_SECURE_COOKIE = os.environ.get("VERCEL") == "1" or os.environ.get("SECURE_COOKIE", "").lower() == "true"
 
 auth_router = APIRouter()
 
@@ -89,11 +99,12 @@ def login(login_data: LoginRequest, response: Response):
         data={"sub": login_data.username}, expires_delta=access_token_expires
     )
     
-    # Set HTTP-only cookie
+    # Set HTTP-only cookie; Secure flag is enabled on HTTPS/Vercel deployments
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
+        secure=_SECURE_COOKIE,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         expires=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         samesite="lax"
