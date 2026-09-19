@@ -643,6 +643,8 @@ async def map_fact(filing_id: str, payload: MapFactIn) -> MapFactOut:
         replaced_ids = {fact.id, payload.replaces_fact_id}
         snap.contexts, snap.units = contexts, units
         snap.facts = [f for f in snap.facts if f.id not in replaced_ids] + [fact]
+        store.update(snap)
+
     except (ValueError, TypeError, InvalidOperation) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except KeyError as exc:
@@ -695,6 +697,7 @@ async def remove_fact(filing_id: str, fact_id: str) -> dict:
 
     before = len(snap.facts)
     snap.facts = [f for f in snap.facts if f.id != fact_id]
+    store.update(snap)
     return {"removed": before - len(snap.facts)}
 
 
@@ -708,6 +711,7 @@ async def add_section(filing_id: str, payload: AddSectionIn) -> dict:
     if snap.state not in (FilingState.DRAFT, FilingState.REVIEWED):
         raise HTTPException(status_code=409, detail="Cannot modify a frozen/validated snapshot.")
     snap.report_sections.add(payload.section)
+    store.update(snap)
     return {"sections": list(snap.report_sections)}
 
 
@@ -721,6 +725,7 @@ async def review_requirement(filing_id: str, payload: ReviewRequirementIn) -> di
     if snap.state not in (FilingState.DRAFT, FilingState.REVIEWED):
         raise HTTPException(status_code=409, detail="Cannot modify a frozen/validated snapshot.")
     snap.reviewed_requirement_ids.add(payload.requirement_id)
+    store.update(snap)
     return {"reviewed": list(snap.reviewed_requirement_ids)}
 
 
@@ -740,6 +745,7 @@ async def freeze_snapshot(filing_id: str, payload: FreezeIn) -> SnapshotOut:
             raise ValueError("Validation must pass before freeze: " + "; ".join(i.code for i in critical_issues))
         store.get_document(snap.document_sha256)
         snap.freeze(is_final=payload.is_final, signatory_name=payload.signatory_name, approval_date=payload.approval_date)
+        store.update(snap)
     except (ValueError, KeyError) as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return _snap_out(snap)
@@ -755,6 +761,7 @@ async def reopen_snapshot(filing_id: str) -> SnapshotOut:
     snap.frozen_at = snap.frozen_digest = snap.validation_digest = None
     snap.is_final = False
     snap.signatory_name = snap.approval_date = None
+    store.update(snap)
     return _snap_out(snap)
 
 

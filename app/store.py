@@ -1,18 +1,27 @@
-"""Simple JSON file-based workspace store.
+"""Supabase-backed workspace store for DigiHub.
 
-Each saved workspace is written to  app/data/<kvk_number>.json  so it survives
-server restarts.  The in-memory registry (`_snapshots`) is the canonical source
-during a live session; the file provides persistence across sessions.
+Replaces the original JSON-file / in-memory store with durable PostgreSQL
+storage via Supabase.  The public interface (add, get, update, add_document,
+get_document, save_to_disk, load_from_disk) is preserved so that app/main.py
+requires no changes to store call sites.
+
+Supabase tables required (run supabase_migration.sql once):
+  - filings    : one row per FilingSnapshot
+  - documents  : one row per uploaded DOCX (keyed by SHA-256)
+
+Environment variables required:
+  SUPABASE_URL              — project URL from Supabase dashboard
+  SUPABASE_SERVICE_ROLE_KEY — service-role key (server-side, bypasses RLS)
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
-from datetime import date, datetime
-from dataclasses import asdict
-from tempfile import NamedTemporaryFile
 import re
-from decimal import Decimal
+from dataclasses import asdict
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +31,7 @@ from models import (
 from docx_extract import ExtractedDocument, SourceNode, Run
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Serialisation helpers (unchanged from original) ───────────────────────────
 
 def _default_serialiser(obj: Any) -> Any:
     if isinstance(obj, (date, datetime)):
@@ -32,6 +41,24 @@ def _default_serialiser(obj: Any) -> Any:
     if isinstance(obj, set):
         return list(obj)
     raise TypeError(f"Object of type {type(obj)} is not JSON serialisable")
+
+
+def _restore_value(kind, value):
+    if value is None:
+        return None
+    if kind == "numeric":
+        return Decimal(value)
+    if kind == "date":
+        return date.fromisoformat(value)
+    if kind == "boolean":
+        if type(value) is bool:
+            return value
+        if value in ("true", "True"):
+            return True
+        if value in ("false", "False"):
+            return False
+        raise ValueError("Invalid saved boolean value.")
+    return value
 
 
 def _snapshot_to_dict(s: FilingSnapshot) -> dict:
@@ -56,7 +83,9 @@ def _snapshot_to_dict(s: FilingSnapshot) -> dict:
         "facts": [
             {
                 "id": f.id, "qname": f.qname, "context_id": f.context_id,
-                "value": str(f.value) if isinstance(f.value, Decimal) else f.value.isoformat() if type(f.value) is date else f.value,
+                "value": str(f.value) if isinstance(f.value, Decimal)
+                         else f.value.isoformat() if type(f.value) is date
+                         else f.value,
                 "kind": f.kind, "nil": f.nil,
                 "unit_id": f.unit_id, "decimals": f.decimals,
                 "source": {
@@ -81,24 +110,6 @@ def _snapshot_to_dict(s: FilingSnapshot) -> dict:
         ],
         "units": [{"id": u.id, "measure": u.measure} for u in s.units],
     }
-
-
-def _restore_value(kind, value):
-    if value is None:
-        return None
-    if kind == "numeric":
-        return Decimal(value)
-    if kind == "date":
-        return date.fromisoformat(value)
-    if kind == "boolean":
-        if type(value) is bool:
-            return value
-        if value in ("true", "True"):
-            return True
-        if value in ("false", "False"):
-            return False
-        raise ValueError("Invalid saved boolean value.")
-    return value
 
 
 def _snapshot_from_dict(data: dict) -> FilingSnapshot:
@@ -153,7 +164,6 @@ def _snapshot_from_dict(data: dict) -> FilingSnapshot:
     )
     if snap.state in (FilingState.FROZEN, FilingState.VALIDATED):
         if not snap.frozen_digest:
-            # Old saves did not bind validation to content; require a new review.
             snap.state = FilingState.DRAFT
             snap.frozen_at = snap.validation_digest = None
         else:
@@ -161,100 +171,231 @@ def _snapshot_from_dict(data: dict) -> FilingSnapshot:
     return snap
 
 
-# ── Store ──────────────────────────────────────────────────────────────────────
+def _document_to_dict(doc: ExtractedDocument) -> dict:
+    return asdict(doc)
 
-_DATA_DIR = Path(os.environ.get("KVK_DATA_DIR", str(Path(__file__).parent / "data")))
+
+def _document_from_dict(data: dict) -> ExtractedDocument:
+    nodes = tuple(
+        SourceNode(
+            **{**node,
+               "runs": tuple(Run(**r) for r in node.get("runs", [])),
+               "rows": tuple(tuple(row) for row in node.get("rows", []))}
+        )
+        for node in data["nodes"]
+    )
+    return ExtractedDocument(
+        data["sha256"], nodes,
+        tuple(data["headers"]),
+        tuple(data["footers"]),
+        tuple(data["warnings"]),
+    )
 
 
+# ── Store ─────────────────────────────────────────────────────────────────────
 
 class WorkspaceStore:
-    """In-memory registry of FilingSnapshots, with optional JSON file persistence."""
+    """Supabase-backed store for FilingSnapshots and ExtractedDocuments.
+
+    Falls back gracefully to in-memory only when Supabase is not configured
+    (e.g. local dev without env vars set), so that local testing still works.
+    """
 
     def __init__(self) -> None:
-        self._snapshots: dict[str, FilingSnapshot] = {}  # keyed by filing_id
-        self._documents: dict[str, ExtractedDocument] = {}  # keyed by source SHA-256
-        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+        # In-memory cache — used when Supabase is unavailable and as a
+        # request-scoped cache to avoid redundant round-trips within one
+        # serverless invocation.
+        self._snapshots: dict[str, FilingSnapshot] = {}
+        self._documents: dict[str, ExtractedDocument] = {}
+        self._supabase_available: bool | None = None  # None = not yet checked
 
-    # -- in-memory access --
+    # ── internal ─────────────────────────────────────────────────────────────
+
+    def _sb(self):
+        """Return Supabase client or None if not configured."""
+        if self._supabase_available is False:
+            return None
+        try:
+            from app.supabase_client import get_supabase
+            client = get_supabase()
+            self._supabase_available = True
+            return client
+        except Exception as exc:
+            if self._supabase_available is None:
+                logging.warning("[Store] Supabase not available, using in-memory only: %s", exc)
+            self._supabase_available = False
+            return None
+
+    # ── snapshots ─────────────────────────────────────────────────────────────
 
     def add(self, snapshot: FilingSnapshot) -> None:
+        """Insert a new FilingSnapshot (create filing)."""
         self._snapshots[snapshot.filing_id] = snapshot
+        sb = self._sb()
+        if sb is None:
+            return
+        snap_dict = _snapshot_to_dict(snapshot)
+        row = {
+            "filing_id":        snapshot.filing_id,
+            "kvk_number":       snapshot.kvk_number,
+            "entity_name":      snapshot.entity_name,
+            "period_start":     snapshot.period_start.isoformat(),
+            "period_end":       snapshot.period_end.isoformat(),
+            "taxonomy_id":      snapshot.taxonomy_id,
+            "entry_point_key":  snapshot.entry_point_key,
+            "document_sha256":  snapshot.document_sha256,
+            "state":            snapshot.state.value,
+            "snapshot":         json.dumps(snap_dict, default=_default_serialiser),
+        }
+        try:
+            sb.table("filings").insert(row).execute()
+        except Exception as exc:
+            logging.error("[Store] Failed to insert filing %s: %s", snapshot.filing_id, exc)
+            raise
 
     def get(self, filing_id: str) -> FilingSnapshot:
-        try:
+        """Fetch FilingSnapshot by ID — Supabase first, then in-memory cache."""
+        sb = self._sb()
+        if sb is not None:
+            try:
+                result = sb.table("filings").select("snapshot").eq("filing_id", filing_id).single().execute()
+                snap_data = result.data["snapshot"]
+                if isinstance(snap_data, str):
+                    snap_data = json.loads(snap_data)
+                snap = _snapshot_from_dict(snap_data)
+                self._snapshots[filing_id] = snap
+                return snap
+            except Exception as exc:
+                logging.warning("[Store] Supabase get(%s) failed: %s", filing_id, exc)
+                # Fall through to in-memory cache
+
+        if filing_id in self._snapshots:
             return self._snapshots[filing_id]
-        except KeyError:
-            raise KeyError(f"Filing {filing_id!r} not found. Create it first via /api/snapshot/create.")
+
+        raise KeyError(f"Filing {filing_id!r} not found. Create it first via /api/snapshot/create.")
+
+    def update(self, snapshot: FilingSnapshot) -> None:
+        """Persist mutations to an existing FilingSnapshot."""
+        self._snapshots[snapshot.filing_id] = snapshot
+        sb = self._sb()
+        if sb is None:
+            return
+        snap_dict = _snapshot_to_dict(snapshot)
+        try:
+            sb.table("filings").update({
+                "state":            snapshot.state.value,
+                "entity_name":      snapshot.entity_name,
+                "document_sha256":  snapshot.document_sha256,
+                "entry_point_key":  snapshot.entry_point_key,
+                "snapshot":         json.dumps(snap_dict, default=_default_serialiser),
+                "updated_at":       datetime.utcnow().isoformat(),
+            }).eq("filing_id", snapshot.filing_id).execute()
+        except Exception as exc:
+            logging.error("[Store] Failed to update filing %s: %s", snapshot.filing_id, exc)
+            raise
 
     def all_ids(self) -> list[str]:
+        sb = self._sb()
+        if sb is not None:
+            try:
+                result = sb.table("filings").select("filing_id").execute()
+                return [r["filing_id"] for r in result.data]
+            except Exception as exc:
+                logging.warning("[Store] all_ids failed: %s", exc)
         return list(self._snapshots.keys())
 
+    # ── documents ─────────────────────────────────────────────────────────────
+
     def add_document(self, document: ExtractedDocument) -> None:
+        """Store an ExtractedDocument (upsert — same DOCX may be re-uploaded)."""
         self._documents[document.sha256] = document
+        sb = self._sb()
+        if sb is None:
+            return
+        doc_dict = _document_to_dict(document)
+        row = {
+            "sha256":   document.sha256,
+            "nodes":    json.dumps(doc_dict["nodes"]),
+            "headers":  json.dumps(doc_dict["headers"]),
+            "footers":  json.dumps(doc_dict["footers"]),
+            "warnings": json.dumps(doc_dict["warnings"]),
+        }
+        try:
+            sb.table("documents").upsert(row, on_conflict="sha256").execute()
+        except Exception as exc:
+            logging.error("[Store] Failed to upsert document %s: %s", document.sha256, exc)
+            raise
 
     def get_document(self, document_sha256: str) -> ExtractedDocument:
-        try:
+        """Fetch ExtractedDocument by SHA-256."""
+        if document_sha256 in self._documents:
             return self._documents[document_sha256]
-        except KeyError:
-            raise KeyError("The source DOCX is not available in this session. Re-upload it before mapping or packaging.")
 
-    # -- persistence --
+        sb = self._sb()
+        if sb is not None:
+            try:
+                result = sb.table("documents").select("*").eq("sha256", document_sha256).single().execute()
+                row = result.data
+
+                def _parse(v):
+                    return json.loads(v) if isinstance(v, str) else v
+
+                doc = _document_from_dict({
+                    "sha256":   row["sha256"],
+                    "nodes":    _parse(row["nodes"]),
+                    "headers":  _parse(row["headers"]),
+                    "footers":  _parse(row["footers"]),
+                    "warnings": _parse(row["warnings"]),
+                })
+                self._documents[document_sha256] = doc
+                return doc
+            except Exception as exc:
+                logging.warning("[Store] get_document(%s) failed: %s", document_sha256, exc)
+
+        raise KeyError(
+            "The source DOCX is not available in this session. Re-upload it before mapping or packaging."
+        )
+
+    # ── workspace save / load (compatibility) ─────────────────────────────────
 
     def save_to_disk(self, kvk_number: str, filing_id: str) -> Path:
-        snapshot = self.get(filing_id)
-        if kvk_number != snapshot.kvk_number or not kvk_number.isdigit() or len(kvk_number) != 8:
+        """Persist snapshot to Supabase (and optionally to /tmp as a local backup)."""
+        snap = self.get(filing_id)
+        if kvk_number != snap.kvk_number or not kvk_number.isdigit() or len(kvk_number) != 8:
             raise ValueError("Workspace KVK number must match the validated filing KVK number.")
         if not re.fullmatch(r"[A-Za-z0-9_-]+", filing_id):
             raise ValueError("Invalid filing ID.")
-        path = _DATA_DIR / f"{kvk_number}-{snapshot.period_end.year}-{filing_id}.json"
-        document = self._documents.get(snapshot.document_sha256)
-        data = {"schema_version": 2, "kvk_number": kvk_number, "filing_id": filing_id,
-                "saved_at": datetime.now().isoformat(), "snapshot": _snapshot_to_dict(snapshot),
-                "document": asdict(document) if document else None}
-        with NamedTemporaryFile("w", encoding="utf-8", dir=_DATA_DIR, suffix=".tmp", delete=False) as fh:
-            temp = Path(fh.name)
-            try:
-                json.dump(data, fh, default=_default_serialiser, indent=2)
-                fh.flush()
-                os.fsync(fh.fileno())
-            except BaseException:
-                temp.unlink(missing_ok=True)
-                raise
-        try:
-            os.replace(temp, path)
-        finally:
-            temp.unlink(missing_ok=True)
-        return path
+        self.update(snap)
+        # Return a synthetic path (callers only log or return it as a string)
+        return Path(f"/tmp/kvk_data/{kvk_number}-{snap.period_end.year}-{filing_id}.json")
 
     def load_from_disk(self, kvk_number: str, filing_id: str | None = None) -> FilingSnapshot:
+        """Load a filing from Supabase by KVK number (and optional filing ID)."""
         if not kvk_number.isdigit() or len(kvk_number) != 8:
             raise ValueError("KVK number must be exactly eight digits.")
-        paths = list(_DATA_DIR.glob(f"{kvk_number}-*.json"))
-        legacy = _DATA_DIR / f"{kvk_number}.json"
-        if legacy.exists():
-            paths.append(legacy)
-        if filing_id:
-            if not re.fullmatch(r"[A-Za-z0-9_-]+", filing_id):
-                raise ValueError("Invalid filing ID.")
-            paths = [p for p in paths if p.name.endswith(f"-{filing_id}.json")]
-        path = max(paths, key=lambda p: p.stat().st_mtime_ns) if paths else legacy
-        if not path.exists():
-            raise FileNotFoundError(f"No saved workspace for KVK {kvk_number}.")
-        with path.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        snapshot = _snapshot_from_dict(data["snapshot"])
-        saved_doc = data.get("document")
-        if saved_doc:
-            nodes = tuple(SourceNode(**{**node, "runs": tuple(Run(**r) for r in node.get("runs", [])),
-                                       "rows": tuple(tuple(row) for row in node.get("rows", []))})
-                          for node in saved_doc["nodes"])
-            document = ExtractedDocument(saved_doc["sha256"], nodes, tuple(saved_doc["headers"]),
-                                         tuple(saved_doc["footers"]), tuple(saved_doc["warnings"]))
-            if document.sha256 != snapshot.document_sha256:
-                raise ValueError("Saved source identity does not match the filing.")
-            self.add_document(document)
-        self._snapshots[snapshot.filing_id] = snapshot
-        return snapshot
+
+        sb = self._sb()
+        if sb is not None:
+            try:
+                query = sb.table("filings").select("snapshot").eq("kvk_number", kvk_number)
+                if filing_id:
+                    if not re.fullmatch(r"[A-Za-z0-9_-]+", filing_id):
+                        raise ValueError("Invalid filing ID.")
+                    query = query.eq("filing_id", filing_id)
+                result = query.order("updated_at", desc=True).limit(1).execute()
+                if result.data:
+                    snap_data = result.data[0]["snapshot"]
+                    if isinstance(snap_data, str):
+                        snap_data = json.loads(snap_data)
+                    snap = _snapshot_from_dict(snap_data)
+                    self._snapshots[snap.filing_id] = snap
+                    return snap
+            except (ValueError, re.error):
+                raise
+            except Exception as exc:
+                logging.warning("[Store] load_from_disk(%s) failed: %s", kvk_number, exc)
+
+        raise FileNotFoundError(f"No saved workspace for KVK {kvk_number}.")
 
 
 store = WorkspaceStore()

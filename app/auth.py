@@ -41,12 +41,23 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_allowed_users():
     """
-    Load allowed users from ALLOWED_USERS environment variable or users.json.
-    Format of ALLOWED_USERS: username:hashed_password,username2:hashed_password2
+    Load allowed users from Supabase digihub_users table.
+    Falls back to ALLOWED_USERS env var / users.json if Supabase is unavailable.
     """
     users = {}
     
-    # Check env var first (for Vercel)
+    try:
+        from app.supabase_client import get_supabase
+        client = get_supabase()
+        if client:
+            result = client.table("digihub_users").select("username", "pwd_hash").execute()
+            for row in result.data:
+                users[row["username"]] = row["pwd_hash"]
+            return users
+    except Exception as exc:
+        logging.warning("[Auth] Failed to load users from Supabase: %s", exc)
+
+    # Fallback for local testing if Supabase is not configured
     env_users = os.environ.get("ALLOWED_USERS")
     if env_users:
         try:
@@ -57,7 +68,6 @@ def get_allowed_users():
         except Exception:
             pass
             
-    # Check local file if env var is empty or missing
     if not users:
         users_file = os.path.join(os.path.dirname(__file__), "..", "users.json")
         if os.path.exists(users_file):
