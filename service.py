@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from .generator import generate_ixbrl
-from .models import FilingSnapshot, FilingState
-from .package import create_report_package
-from .registry import TaxonomyRegistry
-from .validator import validate_snapshot, validate_xml
+from generator import generate_ixbrl
+from models import FilingSnapshot, FilingState
+from package import create_report_package
+from registry import TaxonomyRegistry
+from validator import validate_snapshot, validate_xml
 
 
 class ExportBlocked(RuntimeError):
@@ -40,7 +40,7 @@ class FilingService:
             raise ExportBlocked("VALIDATION_INCOMPLETE: An independent DTS, formula and filing-rule validator must be configured before export.")
         if document is None or document.sha256 != snapshot.document_sha256:
             raise ExportBlocked("PROVENANCE: The exact source document is required for rendering.")
-        from .mapping import source_value
+        from mapping import source_value
         for fact in snapshot.facts:
             matches = []
             for node in document.nodes:

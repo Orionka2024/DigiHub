@@ -4,8 +4,8 @@ import io
 import json
 import zipfile
 
-from .models import FilingSnapshot
-from .registry import TaxonomyRelease
+from models import FilingSnapshot
+from registry import TaxonomyRelease
 
 
 def create_report_package(snapshot: FilingSnapshot, taxonomy: TaxonomyRelease, ixbrl: bytes) -> bytes:

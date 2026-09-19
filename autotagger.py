@@ -4,8 +4,8 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from .docx_extract import SourceNode
-from .registry import TaggingRequirement
+from docx_extract import SourceNode
+from registry import TaggingRequirement
 
 
 def _camel_to_words(text: str) -> set[str]:

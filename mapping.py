@@ -8,8 +8,8 @@ import re
 from datetime import date
 from decimal import Decimal
 
-from .docx_extract import ExtractedDocument
-from .models import Fact, SourceRef
+from docx_extract import ExtractedDocument
+from models import Fact, SourceRef
 
 
 @dataclass(frozen=True)
