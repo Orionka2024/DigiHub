@@ -2,6 +2,7 @@
 create table digihub_users (
   id          uuid primary key default gen_random_uuid(),
   username    text unique not null,
+  email       text,
   pwd_hash    text not null,           -- existing pbkdf2 format: salt:hash
   role        text not null default 'preparer', -- 'preparer' | 'reviewer' | 'admin'
   created_at  timestamptz default now()

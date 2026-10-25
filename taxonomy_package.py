@@ -12,6 +12,17 @@ def extract_verified(package: Path, expected: str, destination: Path) -> Path:
     if sha256(package.read_bytes()).hexdigest() != expected:
         raise ValueError("Package checksum mismatch.")
     destination.mkdir(parents=True, exist_ok=True)
+
+    # Reuse existing extraction if already present
+    existing_roots = [p.parent.parent for p in destination.glob("**/META-INF/taxonomyPackage.xml")]
+    if existing_roots:
+        return existing_roots[0]
+
+    # Clean stale temp directories to avoid exhausting /tmp disk quota
+    for item in destination.iterdir():
+        if item.is_dir() and item.name.startswith("taxonomy-"):
+            shutil.rmtree(item, ignore_errors=True)
+
     target = Path(mkdtemp(prefix="taxonomy-", dir=destination))
     try:
         with zipfile.ZipFile(package) as archive:

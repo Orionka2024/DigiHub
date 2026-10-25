@@ -30,7 +30,11 @@ class LoginRequest(BaseModel):
     password: str
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a pbkdf2_hmac password hash (format: salt:hash)"""
+    """Verify a pbkdf2_hmac password hash (format: salt:hash) or plaintext match."""
+    if not hashed_password:
+        return False
+    if hashed_password == plain_password:
+        return True
     try:
         salt_hex, hash_hex = hashed_password.split(':')
         salt = bytes.fromhex(salt_hex)
@@ -43,6 +47,7 @@ def get_allowed_users():
     """
     Load allowed users from Supabase digihub_users table.
     Falls back to ALLOWED_USERS env var / users.json if Supabase is unavailable.
+    Returns mapping of lowercase identifier (username and email) -> pwd_hash.
     """
     users = {}
     
@@ -50,10 +55,15 @@ def get_allowed_users():
         from app.supabase_client import get_supabase
         client = get_supabase()
         if client:
-            result = client.table("digihub_users").select("username", "pwd_hash").execute()
+            result = client.table("digihub_users").select("*").execute()
             for row in result.data:
-                users[row["username"]] = row["pwd_hash"]
-            return users
+                pwd_hash = row.get("pwd_hash") or ""
+                if row.get("username"):
+                    users[str(row["username"]).strip().lower()] = pwd_hash
+                if row.get("email"):
+                    users[str(row["email"]).strip().lower()] = pwd_hash
+            if users:
+                return users
     except Exception as exc:
         logging.warning("[Auth] Failed to load users from Supabase: %s", exc)
 
@@ -64,7 +74,7 @@ def get_allowed_users():
             for pair in env_users.split(","):
                 if ":" in pair:
                     username, pwd = pair.split(":", 1)
-                    users[username.strip()] = pwd.strip()
+                    users[username.strip().lower()] = pwd.strip()
         except Exception:
             pass
             
@@ -73,7 +83,9 @@ def get_allowed_users():
         if os.path.exists(users_file):
             try:
                 with open(users_file, "r") as f:
-                    users = json.load(f)
+                    raw_users = json.load(f)
+                    for k, v in raw_users.items():
+                        users[k.strip().lower()] = v
             except Exception:
                 pass
                 
@@ -91,22 +103,60 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 @auth_router.post("/api/login")
 def login(login_data: LoginRequest, response: Response):
-    users = get_allowed_users()
-    
-    if not users:
-        # If no users configured, block all logins or allow a default? Let's block.
-        raise HTTPException(status_code=401, detail="No users configured in the system.")
+    identifier = login_data.username.strip()
+    password = login_data.password
+    authenticated_user = None
+
+    # 1. Attempt Supabase Auth (e.g. if user added via Supabase Dashboard -> Authentication -> Users)
+    try:
+        from app.supabase_client import get_supabase
+        client = get_supabase()
+        if client:
+            try:
+                auth_resp = client.auth.sign_in_with_password({
+                    "email": identifier,
+                    "password": password
+                })
+                if auth_resp and getattr(auth_resp, "user", None):
+                    user_obj = auth_resp.user
+                    authenticated_user = getattr(user_obj, "email", None) or identifier
+                    # Sync to digihub_users table if not yet present
+                    try:
+                        existing = client.table("digihub_users").select("id").eq("username", authenticated_user).execute()
+                        if not existing.data:
+                            client.table("digihub_users").insert({
+                                "username": authenticated_user,
+                                "pwd_hash": "supabase_auth",
+                                "role": "preparer"
+                            }).execute()
+                    except Exception:
+                        pass
+            except Exception as auth_err:
+                logging.info("[Auth] Supabase Auth sign-in attempted for %s: %s", identifier, auth_err)
+    except Exception:
+        pass
+
+    # 2. If not authenticated via Supabase Auth, verify against digihub_users table / ALLOWED_USERS / users.json
+    if not authenticated_user:
+        users = get_allowed_users()
+        hashed_password = users.get(identifier.lower())
         
-    hashed_password = users.get(login_data.username)
-    if not hashed_password or not verify_password(login_data.password, hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-        )
+        if hashed_password and verify_password(password, hashed_password):
+            authenticated_user = identifier
+        elif not users:
+            raise HTTPException(
+                status_code=401,
+                detail="No users configured in the system. Please configure users in Supabase or set ALLOWED_USERS."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username/email or password",
+            )
         
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": login_data.username}, expires_delta=access_token_expires
+        data={"sub": authenticated_user}, expires_delta=access_token_expires
     )
     
     # Set HTTP-only cookie; Secure flag is enabled on HTTPS/Vercel deployments
@@ -120,7 +170,7 @@ def login(login_data: LoginRequest, response: Response):
         samesite="lax"
     )
     
-    return {"message": "Login successful", "user": login_data.username}
+    return {"message": "Login successful", "user": authenticated_user}
 
 @auth_router.post("/api/logout")
 def logout(response: Response):
@@ -145,9 +195,16 @@ def get_current_user(request: Request):
     except jwt.PyJWTError:
         raise credentials_exception
         
-    # Verify user still exists in allowed list
+    # Check if user is known
     users = get_allowed_users()
-    if username not in users:
-        raise credentials_exception
+    if users and username.lower() not in users:
+        # If user signed in via Supabase Auth, verify client exists
+        try:
+            from app.supabase_client import get_supabase
+            client = get_supabase()
+            if not client:
+                raise credentials_exception
+        except Exception:
+            raise credentials_exception
         
     return username
