@@ -32,7 +32,19 @@ def extract_verified(package: Path, expected: str, destination: Path) -> Path:
                 lock.close()
                 return roots[0].parent.parent
     if cached.exists():
-        shutil.rmtree(cached)
+        shutil.rmtree(cached, ignore_errors=True)
+    # Clean stale temp directories to avoid exhausting /tmp disk quota
+    for p in (destination, destination.parent):
+        if p.exists():
+            for item in p.glob("taxonomy-*"):
+                shutil.rmtree(item, ignore_errors=True)
+    if os.environ.get("VERCEL"):
+        for item in Path("/tmp").glob("taxonomy-*"):
+            shutil.rmtree(item, ignore_errors=True)
+        if destination.parent.exists():
+            for item in destination.parent.iterdir():
+                if item.is_dir() and item.name != expected:
+                    shutil.rmtree(item, ignore_errors=True)
     target = Path(mkdtemp(prefix="taxonomy-", dir=destination))
     try:
         with zipfile.ZipFile(package) as archive:
