@@ -4,8 +4,28 @@ window.fetch = async function(...args) {
     if (response.status === 401 && !window.location.pathname.includes('/login.html')) {
         window.location.href = '/login.html';
     }
+    if (response.status === 403) {
+        document.body.innerHTML = `
+          <div style="padding: 2.5rem; max-width: 540px; margin: 60px auto; font-family: Inter, sans-serif; background: white; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center;">
+            <div style="font-size: 2.5rem; margin-bottom: 0.5rem; color: #dc2626;">⬡</div>
+            <h2 style="color: #111827; margin: 0 0 0.75rem 0;">Access Restricted</h2>
+            <p style="color: #4b5563; font-size: 0.95rem; line-height: 1.5; margin-bottom: 1.5rem;">Only an administrator can view or change taxonomy reporting rules.</p>
+            <div style="display: flex; gap: 1rem; justify-content: center;">
+              <a href="/" style="display: inline-block; padding: 0.6rem 1.2rem; background: #2563eb; color: white; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 0.9rem;">Back to Workspace</a>
+              <button onclick="logoutAdmin()" style="padding: 0.6rem 1.2rem; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; font-weight: 500; font-size: 0.9rem; cursor: pointer;">Sign out</button>
+            </div>
+          </div>
+        `;
+    }
     return response;
 };
+
+async function logoutAdmin() {
+    try {
+        await fetch('/api/logout', { method: 'POST' });
+    } catch (_) {}
+    window.location.href = '/login.html';
+}
 
 const API_BASE = '/api';
 const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');

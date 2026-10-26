@@ -34,3 +34,10 @@ def get_supabase():
         )
 
     return _client
+
+
+def new_auth_client():
+    """Request-scoped auth client; sign-in must not mutate the service client."""
+    from supabase import create_client
+    return create_client(os.environ["SUPABASE_URL"],
+                         os.environ.get("SUPABASE_ANON_KEY") or os.environ["SUPABASE_SERVICE_ROLE_KEY"])

@@ -4,6 +4,8 @@ import io
 import json
 import zipfile
 
+MAX_REPORT_PACKAGE_BYTES = 50 * 1024 * 1024  # Conservative application limit, not a legal assertion.
+
 from models import FilingSnapshot
 from registry import TaxonomyRelease
 
@@ -22,4 +24,7 @@ def create_report_package(snapshot: FilingSnapshot, taxonomy: TaxonomyRelease, i
             item.compress_type = zipfile.ZIP_DEFLATED
             item.external_attr = 0o100644 << 16
             archive.writestr(item, content)
-    return output.getvalue()
+    payload = output.getvalue()
+    if len(payload) > MAX_REPORT_PACKAGE_BYTES:
+        raise ValueError("Report package exceeds this app’s 50 MiB limit. Reduce embedded content and check the provider’s applicable size limit.")
+    return payload

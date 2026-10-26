@@ -37,3 +37,6 @@ NT21_*
 !app/data/taxonomies/*.json
 !app/data/taxonomies/*.zip
 !taxonomy/
+
+# Verified extracted taxonomy cache (recreated from the bundled archive)
+app/data/taxonomies/.extracted/

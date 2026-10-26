@@ -12,6 +12,8 @@ from typing import Optional
 # JWT configuration
 _DEV_SECRET = "dev-secret-key-change-me-in-production"
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", _DEV_SECRET)
+if (SECRET_KEY == _DEV_SECRET or len(SECRET_KEY) < 32) and (os.environ.get("VERCEL") or os.environ.get("PROD") == "1"):
+    raise RuntimeError("Set a private JWT_SECRET_KEY before starting production.")
 if SECRET_KEY == _DEV_SECRET:
     logging.warning(
         "[AUTH] JWT_SECRET_KEY is not set — using insecure development default. "
@@ -30,11 +32,9 @@ class LoginRequest(BaseModel):
     password: str
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a pbkdf2_hmac password hash (format: salt:hash) or plaintext match."""
+    """Verify a pbkdf2_hmac password hash (format: salt:hash)."""
     if not hashed_password:
         return False
-    if hashed_password == plain_password:
-        return True
     try:
         salt_hex, hash_hex = hashed_password.split(':')
         salt = bytes.fromhex(salt_hex)
@@ -62,9 +62,10 @@ def get_allowed_users():
                     users[str(row["username"]).strip().lower()] = pwd_hash
                 if row.get("email"):
                     users[str(row["email"]).strip().lower()] = pwd_hash
-            if users:
-                return users
+            return users
     except Exception as exc:
+        if os.environ.get("SUPABASE_URL"):
+            raise HTTPException(503, "Sign-in service unavailable. Please try again.") from exc
         logging.warning("[Auth] Failed to load users from Supabase: %s", exc)
 
     # Fallback for local testing if Supabase is not configured
@@ -103,23 +104,23 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 @auth_router.post("/api/login")
 def login(login_data: LoginRequest, response: Response):
-    identifier = login_data.username.strip()
+    identifier = login_data.username.strip().lower()
     password = login_data.password
     authenticated_user = None
 
     # 1. Attempt Supabase Auth (e.g. if user added via Supabase Dashboard -> Authentication -> Users)
     try:
-        from app.supabase_client import get_supabase
+        from app.supabase_client import get_supabase, new_auth_client
         client = get_supabase()
         if client:
             try:
-                auth_resp = client.auth.sign_in_with_password({
+                auth_resp = new_auth_client().auth.sign_in_with_password({
                     "email": identifier,
                     "password": password
                 })
                 if auth_resp and getattr(auth_resp, "user", None):
                     user_obj = auth_resp.user
-                    authenticated_user = getattr(user_obj, "email", None) or identifier
+                    authenticated_user = (getattr(user_obj, "email", None) or identifier).lower()
                     # Sync to digihub_users table if not yet present
                     try:
                         existing = client.table("digihub_users").select("id").eq("username", authenticated_user).execute()
@@ -132,7 +133,7 @@ def login(login_data: LoginRequest, response: Response):
                     except Exception:
                         pass
             except Exception as auth_err:
-                logging.info("[Auth] Supabase Auth sign-in attempted for %s: %s", identifier, auth_err)
+                logging.info("[Auth] Provider sign-in was not accepted.")
     except Exception:
         pass
 
@@ -197,14 +198,23 @@ def get_current_user(request: Request):
         
     # Check if user is known
     users = get_allowed_users()
-    if users and username.lower() not in users:
-        # If user signed in via Supabase Auth, verify client exists
-        try:
-            from app.supabase_client import get_supabase
-            client = get_supabase()
-            if not client:
-                raise credentials_exception
-        except Exception:
-            raise credentials_exception
-        
-    return username
+    if username.lower() not in users:
+        raise credentials_exception
+    return username.lower()
+
+
+def get_user_role(username):
+    """Roles are assigned by the operator, never supplied by a browser."""
+    if os.environ.get("SUPABASE_URL"):
+        from app.supabase_client import get_supabase
+        rows = get_supabase().table("digihub_users").select("username,email,role").execute().data
+        roles = [r.get("role", "preparer") for r in rows
+                 if username in (str(r.get("username", "")).lower(), str(r.get("email", "")).lower())]
+        return roles[0] if roles else "preparer"
+    return json.loads(os.environ.get("LOCAL_USER_ROLES", "{}")).get(username, "preparer")
+
+
+@auth_router.get("/api/me")
+def me(request: Request):
+    username = get_current_user(request)
+    return {"user": username, "role": get_user_role(username)}

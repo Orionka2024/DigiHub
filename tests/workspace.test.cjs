@@ -69,5 +69,15 @@ el('mapQname').value='t:Flag';el('mapKind').value='boolean';el('mapValue').value
   assert.equal(w.state.pendingRecommendations.length,0);
   w.cancelTagReview();
   assert.equal(w.state._reviewingSuggestion,false);
-  console.log('Workspace regression checks passed: numbers, manual boolean/cell mapping, periods, restore, source reattachment.');
+  // Verify logout triggers API call and redirect
+  let loggedOut = false;
+  sandbox.window.location = { href: '/' };
+  sandbox.fetch = async (url) => {
+    if (url.includes('/logout')) loggedOut = true;
+    return { ok: true, json: async () => ({}) };
+  };
+  await w.logout();
+  assert.equal(loggedOut, true);
+  assert.equal(sandbox.window.location.href, '/login.html');
+  console.log('Workspace regression checks passed: numbers, manual boolean/cell mapping, periods, restore, source reattachment, logout.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

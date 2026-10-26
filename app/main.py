@@ -39,7 +39,7 @@ from app.models_api import (
     SourceNodeOut, TaxonomyReleaseIn, ValidateOut, ValidationIssueOut,
     WorkspaceOut, WorkspaceSaveIn, FreezeIn, AutoTagRequest, AutoTagResponse
 )
-from app.store import store
+from app.store import store, current_actor, read_versions, StorageUnavailable, StorageConflict
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
@@ -69,29 +69,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.auth import auth_router, get_current_user
+from app.auth import auth_router, get_current_user, get_user_role
 app.include_router(auth_router)
 
 @app.middleware("http")
 async def auth_middleware(request, call_next):
+    from fastapi.responses import JSONResponse, RedirectResponse
     path = request.url.path
-    if path.startswith("/api/") and path not in ["/api/login", "/api/logout"]:
-        from fastapi import HTTPException
-        from fastapi.responses import JSONResponse
-        try:
-            get_current_user(request)
-        except HTTPException as e:
-            return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
-            
-    if path == "/":
-        from fastapi import HTTPException
-        from fastapi.responses import RedirectResponse
-        try:
-            get_current_user(request)
-        except HTTPException:
-            return RedirectResponse(url="/login.html")
-            
-    return await call_next(request)
+    actor_token = version_token = None
+    try:
+        if (path.startswith("/api/") and path not in ("/api/login", "/api/logout")) or path == "/":
+            try:
+                actor = get_current_user(request)
+            except HTTPException as exc:
+                if path == "/" and exc.status_code == 401:
+                    return RedirectResponse(url="/login.html")
+                raise
+            if path.startswith("/api/admin/") or path == "/api/taxonomy/install":
+                if get_user_role(actor) != "admin":
+                    raise HTTPException(403, "Only an administrator can change reporting rules.")
+            actor_token = current_actor.set(actor)
+            version_token = read_versions.set({})
+        return await call_next(request)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail":exc.detail})
+    finally:
+        if actor_token is not None:
+            current_actor.reset(actor_token)
+            read_versions.reset(version_token)
+
+
+@app.exception_handler(StorageUnavailable)
+async def storage_unavailable(request, exc):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=503, content={"detail":str(exc)})
+
+
+@app.exception_handler(StorageConflict)
+async def storage_conflict(request, exc):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=409, content={"detail":str(exc)})
 
 
 # ── Root page ──────────────────────────────────────────────────────────────────
@@ -215,8 +232,9 @@ def _schedule_entry_point(release, key):
     status = _ep_loading_status.get(status_key)
     if status in {"done", "incomplete"}:
         return
-    if status != "loading":
-        _parse_release_ep(release, key)
+    if status not in {"loading", "queued"}:
+        _ep_loading_status[status_key] = "queued"
+        _ep_queue.put((release, key))
 
 
 def _load_remaining_entry_points() -> None:
@@ -346,7 +364,9 @@ async def get_taxonomy_files(taxonomy_id: str) -> dict:
 @app.get("/api/taxonomy/list")
 async def list_taxonomies() -> dict:
     ids = list(taxonomy_registry._releases.keys())  # noqa: SLF001
-    return {"taxonomies": ids}
+    return {"taxonomies": ids, "releases": [{"id":r.id,"status":r.status,
+            "name":getattr(r,"name",r.id),"verified":r.package_verified,
+            "year":getattr(r,"reporting_year",None)} for r in taxonomy_registry.list_all()]}
 
 @app.get("/api/taxonomy/{taxonomy_id}/entry-points/select", response_model=SelectEntryPointOut)
 async def select_entry_point(taxonomy_id: str, company_class: str = "groot", sector: str = "general", framework: str = "nlgaap", consolidated: bool = True) -> SelectEntryPointOut:
@@ -517,7 +537,7 @@ async def extract(file: UploadFile = File(...)) -> ExtractedDocumentOut:
             footers=list(doc.footers),
             warnings=list(doc.warnings),
         )
-    except HTTPException:
+    except (HTTPException, StorageUnavailable, StorageConflict):
         raise
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Cannot extract this DOCX: {exc}")
@@ -631,7 +651,7 @@ async def map_fact(filing_id: str, payload: MapFactIn) -> MapFactOut:
         fact = fact_from_decision(source_document, MappingDecision(
             source_node_id=d.source_node_id, source_location=d.source_location, qname=d.qname,
             context_id=d.context_id, kind=d.kind, value=value, unit_id=d.unit_id,
-            decimals=d.decimals, reviewer=d.reviewer))
+            decimals=d.decimals, reviewer=current_actor.get()))
         if any(c.entity_identifier != snap.kvk_number or c.entity_scheme != "http://www.kvk.nl/kvk-id" for c in contexts):
             raise ValueError("Context entity must match the filing.")
         if fact.context_id not in {c.id for c in contexts}:
@@ -798,7 +818,10 @@ async def validate_and_package(filing_id: str) -> StreamingResponse:
     try:
         document = store.get_document(snap.document_sha256)
         zip_bytes = filing_service.validate_and_package(snap, document)
-    except ExportBlocked as exc:
+        store.update(snap)
+    except (StorageUnavailable, StorageConflict):
+        raise
+    except (ExportBlocked, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -851,6 +874,7 @@ def provider_handoff(filing_id: str):
         snap = store.get(filing_id)
         payload = filing_service.validate_and_package(snap, store.get_document(snap.document_sha256))
         bundle = create_handoff(payload, snap, taxonomy_registry.get(snap.taxonomy_id))
+        store.update(snap)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (ExportBlocked, ValueError) as exc:
@@ -892,6 +916,19 @@ async def lookup_kvk(kvk_number: str) -> KvkLookupOut:
         return KvkLookupOut(found=False, source="unconfigured", error="KVK lookup is not configured. Enter entity details manually.")
 
 
+@app.get("/api/snapshot/{filing_id}/audit")
+async def filing_audit(filing_id: str):
+    try:
+        return {"events": store._read("filing", filing_id).get("audit_events", [])}
+    except KeyError as exc:
+        raise HTTPException(404, "Filing unavailable.") from exc
+
+
+@app.get("/api/workspace/list")
+async def list_workspaces():
+    return {"filings": store.list_filings()}
+
+
 # ── Workspace save / load ──────────────────────────────────────────────────────
 
 @app.post("/api/workspace/save", response_model=WorkspaceOut)
@@ -900,8 +937,10 @@ async def save_workspace(payload: WorkspaceSaveIn) -> WorkspaceOut:
         path = store.save_to_disk(payload.kvk_number, payload.filing_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except (StorageUnavailable, StorageConflict):
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Save failed. Keep this page open and retry.")
     return WorkspaceOut(
         kvk_number=payload.kvk_number,
         filing_id=payload.filing_id,

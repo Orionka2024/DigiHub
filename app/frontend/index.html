@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DigiHub Workspace</title>
-  <meta name="description" content="DigiHub – filing-grade XBRL tagging workspace for Dutch annual reports.">
+  <meta name="description" content="DigiHub – guided financial statement preparation workspace for Dutch annual reports.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
@@ -23,17 +23,16 @@
       <!-- Filing state pill -->
       <span id="statePill" class="state-pill draft" style="margin-left: 1rem;">Draft</span>
 
-      <!-- User selector -->
-      <div style="margin-left: 1.25rem; display: flex; align-items: center; gap: 0.4rem;">
+      <!-- User section -->
+      <div style="margin-left: 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        <select id="userSelector" class="form-input" style="padding: 0.25rem 0.5rem; font-size: 0.78rem; height: 26px; width: 155px;" onchange="workspace.handleUserChange()">
-          <option value="preparer">Jane (Preparer)</option>
-          <option value="reviewer">John (Reviewer)</option>
-        </select>
+        <span id="signedInUser" aria-label="Signed-in account">Checking account…</span>
+        <a id="adminLink" href="admin.html" class="ribbon-btn" style="display:none; padding: 2px 8px; font-size: 0.75rem; text-decoration: none;" title="Taxonomy Administration">Admin</a>
+        <button id="btnLogout" class="ribbon-btn" style="padding: 2px 8px; font-size: 0.75rem;" onclick="workspace.logout()" title="Sign out of DigiHub">Sign out</button>
       </div>
     </div>
 
-    <div class="ribbon-center" id="navStatus">Ready</div>
+    <div class="ribbon-center" id="navStatus" role="status" aria-live="polite">Ready</div>
 
     <div class="ribbon-right">
       <!-- Log book -->
@@ -58,10 +57,10 @@
 
       <div class="ribbon-divider"></div>
 
-      <!-- Entity Info -->
+      <!-- Company & year -->
       <button class="ribbon-btn" onclick="workspace.openEntityModal()" title="Entity & taxonomy settings">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-        Entity Info
+        Company & year
       </button>
 
       <div class="ribbon-divider"></div>
@@ -70,33 +69,41 @@
       <input type="file" id="docUpload" accept=".docx" style="display:none" onchange="workspace.handleFileUpload(event)">
       <button class="ribbon-btn" onclick="document.getElementById('docUpload').click()" title="Upload a .docx financial statement">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        Load DOCX
+        Upload statements
       </button>
 
       <!-- Diagnostics / validate -->
       <button class="ribbon-btn" onclick="workspace.runDiagnostics()" id="btnDiagnostics" disabled title="Run XBRL validation">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        Diagnostics
+        Check for issues
       </button>
 
       <button class="ribbon-btn primary" onclick="workspace.openSignOffWizard()" id="btnFreeze" disabled title="Sign-Off and Freeze snapshot">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        Sign-Off & Freeze
+        Review and lock
       </button>
 
       <button class="ribbon-btn" id="btnReopen" disabled onclick="workspace.reopenFiling()">Reopen for editing</button>
 
       <!-- Export / validate-and-package -->
-      <button class="ribbon-btn" onclick="workspace.independentValidation()" title="Download Arelle diagnostics; does not approve filing">Arelle checks</button>
-      <button class="ribbon-btn" onclick="workspace.exportPackage(true)" title="Validated report plus provider handoff evidence">Provider handoff</button>
+      <details class="expert-tools"><summary>Technical tools</summary><div class="expert-menu">
+      <button class="ribbon-btn" onclick="workspace.independentValidation()" title="Diagnostic results only">Arelle diagnostics</button>
+      <button class="ribbon-btn" onclick="workspace.exportPackage(true)" title="Download evidence for your provider; does not submit">Provider handoff bundle</button>
+      </div></details>
       <button class="ribbon-btn primary" onclick="workspace.exportPackage()" id="btnExport" disabled title="Validate and download SBR report package">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Export SBR
+        Download package
       </button>
     </div>
   </header>
 
-  <div id="readinessNotice" role="status" class="readiness-banner" onclick="workspace.showReadiness()" style="padding:6px 16px;background:#fff7df;color:#704d00;font-size:12px;cursor:pointer;display:none;"></div>
+  <div id="readinessNotice" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();workspace.showReadiness();}" class="readiness-banner" onclick="workspace.showReadiness()" style="padding:6px 16px;background:#fff7df;color:#704d00;font-size:12px;cursor:pointer;display:none;"></div>
+  <section class="journey" aria-label="Filing preparation guide">
+    <div class="journey-heading"><div><strong>Your financial statements, step by step</strong><p id="journeyHelp">Have your approved source document, company number and financial year ready. A tag links a disclosure to its reporting definition.</p></div><span class="not-submitted">Not submitted to KVK</span></div>
+    <ol id="journeySteps"><li>Company & year</li><li>Upload</li><li>Review tags</li><li>Check & lock</li><li>Delivery</li></ol>
+    <div id="sourceWarnings" role="status" class="help-text"></div>
+    <div class="journey-actions"><button class="btn-primary" id="nextStep" onclick="workspace.nextStep()">Start with company & year</button><button class="btn-secondary" onclick="workspace.showFilingHelp()">First time? Read the guide</button><span id="saveStatus" role="status">No filing saved yet</span></div>
+  </section>
   <!-- ── Three-panel workspace ────────────────────────────────────────────── -->
   <div class="workspace-layout">
 
@@ -140,15 +147,15 @@
       <div id="documentViewer" class="doc-container">
         <div class="empty-state" style="margin-top: 120px; text-align: center;">
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="1.5" style="margin-bottom: 1rem;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-          <p style="color:#94a3b8; font-family: var(--font-ui);">No document loaded.<br>Use <strong>Load DOCX</strong> to begin.</p>
+          <p style="color:#94a3b8; font-family: var(--font-ui);">No document loaded.<br>Use <strong>Upload statements</strong> to begin.</p>
         </div>
       </div>
     </main>
 
-    <!-- Right: XBRL Tag Inspector -->
+    <!-- Right: Review this disclosure -->
     <aside class="sidebar-right">
       <div class="sidebar-header">
-        XBRL Tag Inspector
+        Review this disclosure
         <span id="tagCount" class="chip blue" style="margin-left: 0.5rem; float: right;">0 tags</span>
       </div>
       <div class="sidebar-content" id="inspectorPanel">
@@ -157,15 +164,16 @@
     </aside>
   </div>
 
-  <!-- ── Entity Info Modal ────────────────────────────────────────────────── -->
+  <!-- ── Company & year Modal ────────────────────────────────────────────────── -->
   <div id="entityModal" class="modal-overlay" style="display:none;">
     <div class="modal-card" style="min-width: 520px;">
       <div class="modal-header">
-        <span class="modal-title">Entity & Taxonomy</span>
+        <span class="modal-title">Company, financial year and reporting profile</span>
         <button class="modal-close" onclick="workspace.closeEntityModal()" aria-label="Close">✕</button>
       </div>
 
       <div class="grid-gap">
+        <p class="help-text">Enter the dates in your financial statements, including a shortened or extended financial year. Confirm the company number and name before continuing.</p>
         <!-- KVK -->
         <div>
           <label for="kvkInput">KVK Number</label>
@@ -185,18 +193,22 @@
         <div class="grid-2">
           <div>
             <label for="periodStartInput">Period Start</label>
-            <input type="date" id="periodStartInput" class="form-input" value="2024-01-01">
+            <input type="date" id="periodStartInput" class="form-input" >
           </div>
           <div>
             <label for="periodEndInput">Period End</label>
-            <input type="date" id="periodEndInput" class="form-input" value="2024-12-31">
+            <input type="date" id="periodEndInput" class="form-input" >
           </div>
         </div>
 
+        <div class="grid-2">
+          <div><label for="profileSize">Company size (Bedrijfsklasse)</label><select id="profileSize" class="form-input" onchange="workspace.filterProfiles()"><option value="">Not sure / show all</option><option value="micro">Micro</option><option value="klein">Small (Klein)</option><option value="middelgroot">Medium-sized (Middelgroot)</option><option value="groot">Large (Groot)</option></select></div>
+          <div><label for="profilePurpose">Reporting purpose</label><select id="profilePurpose" class="form-input" onchange="workspace.filterProfiles()"><option value="">Not sure / show all</option><option value="full">Full annual reporting</option><option value="public">Public filing (Publicatiestukken)</option></select></div>
+        </div>
         <!-- Taxonomy -->
         <div class="grid-2">
           <div>
-            <label for="taxonomyIdInput">Taxonomy ID</label>
+            <label for="taxonomyIdInput">Reporting rules</label>
             <select id="taxonomyIdInput" class="form-input form-select" onchange="workspace.handleTaxonomyChange()">
               <option value="NT21_KVK_20261209_b">NT21_KVK_20261209_b (NT21 Taxonomy 2026)</option>
             </select>
@@ -205,15 +217,17 @@
             <label for="entryPointInput">Company size and reporting profile</label>
             <select id="entryPointInput" class="form-input form-select" onchange="workspace.handleEntryPointChange()">
               <option value="">Choose the applicable reporting profile…</option>
-              <option value="groot_nlgaap">Groot – NL-GAAP</option>
-              <option value="middelgroot_nlgaap">Middelgroot – NL-GAAP</option>
-              <option value="klein_nlgaap">Klein – NL-GAAP</option>
+              <option value="groot_nlgaap">Large (Groot) – Dutch accounting standards</option>
+              <option value="middelgroot_nlgaap">Medium-sized (Middelgroot) – Dutch accounting standards</option>
+              <option value="klein_nlgaap">Small (Klein) – Dutch accounting standards</option>
               <option value="micro_nlgaap">Micro – NL-GAAP</option>
             </select>
           </div>
         </div>
       </div>
 
+      <p class="help-text">Not sure which profile applies? Check the <a href="https://www.kvk.nl/en/filing/filing-financial-statements/" target="_blank" rel="noopener">official company-size guidance</a> with your accountant. NL-GAAP means Dutch accounting standards. “Public filing” is the publication profile; it is not the same as full annual reporting. This workspace currently offers predefined NL-GAAP profiles; an iXBRL filing route still needs qualification.</p>
+      <div id="profileExplanation" class="help-text" role="status"></div>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="workspace.closeEntityModal()">Cancel</button>
         <button class="btn-primary" onclick="workspace.saveEntityModal()">Apply</button>
@@ -225,7 +239,7 @@
   <div id="diagnosticsModal" class="modal-overlay" style="display:none;">
     <div class="modal-card" style="width: 760px; max-width: 94vw;">
       <div class="modal-header">
-        <span class="modal-title">XBRL Diagnostics</span>
+        <span class="modal-title">Checks and issues</span>
         <button class="modal-close" onclick="document.getElementById('diagnosticsModal').style.display='none'">✕</button>
       </div>
       <div id="diagFilterTabs" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
@@ -262,7 +276,7 @@
   <div id="completionModal" class="modal-overlay" style="display:none;">
     <div class="modal-card" style="min-width: 480px;">
       <div class="modal-header">
-        <span class="modal-title">Sign-Off & Freeze</span>
+        <span class="modal-title">Review and lock</span>
         <button class="modal-close" onclick="document.getElementById('completionModal').style.display='none'">✕</button>
       </div>
 
@@ -270,8 +284,8 @@
         <div>
           <label>Filing Status</label>
           <div style="display:flex; gap: 1rem; margin-top: 0.5rem;">
-            <label style="display:flex; align-items:center; gap:0.3rem;"><input type="radio" name="signoffFinal" value="false" checked> Draft</label>
-            <label style="display:flex; align-items:center; gap:0.3rem;"><input type="radio" name="signoffFinal" value="true"> Final Approved</label>
+            <label style="display:flex; align-items:center; gap:0.3rem;"><input type="radio" name="signoffFinal" value="false" checked> Not yet adopted (Niet vastgesteld)</label>
+            <label style="display:flex; align-items:center; gap:0.3rem;"><input type="radio" name="signoffFinal" value="true"> Adopted (Vastgesteld)</label>
           </div>
         </div>
 
@@ -288,7 +302,7 @@
 
       <div class="modal-footer">
         <button class="btn-secondary" onclick="document.getElementById('completionModal').style.display='none'">Cancel</button>
-        <button class="btn-primary" onclick="workspace.submitSignOff()">Freeze Snapshot</button>
+        <button class="btn-primary" onclick="workspace.submitSignOff()">Lock reviewed version</button>
       </div>
     </div>
   </div>
@@ -297,7 +311,7 @@
   <div id="mapFactModal" class="modal-overlay" style="display:none;">
     <div class="modal-card" style="min-width: 480px;">
       <div class="modal-header">
-        <span class="modal-title">Map XBRL Fact</span>
+        <span class="modal-title">Review and confirm a tag</span>
         <button class="modal-close" onclick="workspace.cancelTagReview()">✕</button>
       </div>
 
@@ -308,9 +322,10 @@
           <div id="mapSourceText" class="inspector-value" style="font-size: 0.9rem; word-break: break-word;"></div>
         </div>
 
+        <p class="help-text">Check the definition, source value, year and currency before confirming. English interface language does not change number formatting. Suggestions are matches to review, not accounting advice.</p>
         <!-- QName -->
         <div>
-          <label for="mapQname">Taxonomy Concept (QName)</label>
+          <label for="mapQname">Reporting tag (English or Dutch label)</label>
           <input type="text" id="mapQname" class="form-input" list="tagConceptOptions" placeholder="Search a label or enter a taxonomy tag">
           <datalist id="tagConceptOptions"></datalist>
         </div>
@@ -341,7 +356,7 @@
             <input type="text" id="mapUnit" class="form-input" value="iso4217:EUR">
           </div>
           <div>
-            <label for="mapDecimals">Decimals</label>
+            <label for="mapDecimals">Rounding accuracy (decimals)</label><p class="help-text">0 = nearest euro; −3 = nearest thousand. Enter the full amount: for EUR 12 thousand enter 12000. This setting does not multiply the amount.</p>
             <input type="number" id="mapDecimals" class="form-input" value="-3">
           </div>
         </div>
@@ -349,18 +364,18 @@
         <!-- Context -->
         <div class="grid-2">
           <div>
-            <label for="mapContextId">Context ID</label>
+            <label for="mapContextId">Period covered by this value</label>
             <select id="mapContextId" class="form-input form-select">
               <option value="">Choose the reporting period…</option>
-              <option value="ctx_current">ctx_current (Current Year)</option>
-              <option value="ctx_prior">ctx_prior (Prior Year)</option>
+              <option value="ctx_current">This financial year (income and expenses)</option>
+              <option value="ctx_prior">Previous financial year (income and expenses)</option>
               <option value="ctx_instant_prior">Prior year end (instant)</option>
-              <option value="ctx_instant_end">ctx_instant_end (Instant)</option>
+              <option value="ctx_instant_end">This year end (balance sheet)</option>
             </select>
           </div>
           <div>
             <label for="mapReviewer">Reviewer</label>
-            <input type="text" id="mapReviewer" class="form-input" placeholder="Name of approving reviewer">
+            <input type="text" id="mapReviewer" readonly class="form-input" placeholder="Name of approving reviewer">
           </div>
         </div>
       </div>
@@ -398,6 +413,21 @@
     </div>
   </div>
 
+  <div id="helpModal" class="modal-overlay" style="display:none"><div class="modal-card" style="width:720px">
+    <div class="modal-header"><span class="modal-title">Your filing guide</span><button class="modal-close" aria-label="Close guide" onclick="document.getElementById('helpModal').style.display='none'">✕</button></div>
+    <div id="helpContent"></div>
+    <div class="modal-footer" style="margin-top: 1rem;">
+      <button class="btn-secondary" onclick="document.getElementById('helpModal').style.display='none'">Close guide</button>
+    </div>
+  </div></div>
+  <div id="savedModal" class="modal-overlay" style="display:none"><div class="modal-card" style="width:720px">
+    <div class="modal-header"><span class="modal-title">Your saved filings</span><button class="modal-close" aria-label="Close saved filings" onclick="document.getElementById('savedModal').style.display='none'">✕</button></div>
+    <div id="savedContent" role="status"></div>
+    <div class="modal-footer" style="margin-top: 1rem;">
+      <button class="btn-secondary" onclick="document.getElementById('savedModal').style.display='none'">Close</button>
+    </div>
+  </div></div>
   <script src="workspace.js"></script>
+  <script src="guidance.js"></script>
 </body>
 </html>

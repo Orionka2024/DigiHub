@@ -1,17 +1,7 @@
-"""Supabase-backed workspace store for DigiHub.
+"""Owner-scoped Supabase persistence with explicit durable SQLite demo mode.
 
-Replaces the original JSON-file / in-memory store with durable PostgreSQL
-storage via Supabase.  The public interface (add, get, update, add_document,
-get_document, save_to_disk, load_from_disk) is preserved so that app/main.py
-requires no changes to store call sites.
-
-Supabase tables required (run supabase_migration.sql once):
-  - filings    : one row per FilingSnapshot
-  - documents  : one row per uploaded DOCX (keyed by SHA-256)
-
-Environment variables required:
-  SUPABASE_URL              — project URL from Supabase dashboard
-  SUPABASE_SERVICE_ROLE_KEY — service-role key (server-side, bypasses RLS)
+Apply supabase_security_migration.sql before using the cloud backend.
+Database failures never fall back to an in-memory success.
 """
 from __future__ import annotations
 
@@ -194,208 +184,182 @@ def _document_from_dict(data: dict) -> ExtractedDocument:
 
 # ── Store ─────────────────────────────────────────────────────────────────────
 
+
+from contextvars import ContextVar
+from hashlib import sha256
+import sqlite3
+from datetime import timezone
+
+current_actor = ContextVar("current_actor", default=None)
+read_versions = ContextVar("read_versions", default=None)
+
+
+class StorageUnavailable(RuntimeError):
+    pass
+
+
+class StorageConflict(RuntimeError):
+    pass
+
+
 class WorkspaceStore:
-    """Supabase-backed store for FilingSnapshots and ExtractedDocuments.
+    """Owner-scoped durable storage. Local SQLite is explicitly opt-in.
 
-    Falls back gracefully to in-memory only when Supabase is not configured
-    (e.g. local dev without env vars set), so that local testing still works.
+    Missing configuration and database failures never fall back to memory.
+    Existing ownerless cloud filings require an operator ownership migration.
     """
+    def __init__(self, local_dir=None):
+        self.local_dir = Path(local_dir or os.environ["KVK_LOCAL_DATA_DIR"]) if (local_dir or os.environ.get("KVK_LOCAL_DATA_DIR")) else None
+        if self.local_dir and (os.environ.get("VERCEL") or os.environ.get("PROD") == "1"):
+            raise StorageUnavailable("Local demo storage is disabled in production.")
+        self._snapshots, self._documents = {}, {}  # legacy test cache handles; never authoritative
+        if self.local_dir:
+            self.local_dir.mkdir(parents=True, exist_ok=True)
+            with self._db() as db:
+                db.execute("CREATE TABLE IF NOT EXISTS records (kind TEXT, key TEXT, owner TEXT, body TEXT, version INTEGER, PRIMARY KEY(kind,key,owner))")
 
-    def __init__(self) -> None:
-        # In-memory cache — used when Supabase is unavailable and as a
-        # request-scoped cache to avoid redundant round-trips within one
-        # serverless invocation.
-        self._snapshots: dict[str, FilingSnapshot] = {}
-        self._documents: dict[str, ExtractedDocument] = {}
-        self._supabase_available: bool | None = None  # None = not yet checked
+    def _actor(self):
+        actor = current_actor.get()
+        if not actor:
+            raise PermissionError("An authenticated account is required.")
+        return actor
 
-    # ── internal ─────────────────────────────────────────────────────────────
+    def _db(self):
+        return sqlite3.connect(self.local_dir / "workspace.sqlite3")
 
     def _sb(self):
-        """Return Supabase client or None if not configured."""
-        if self._supabase_available is False:
-            return None
         try:
             from app.supabase_client import get_supabase
-            client = get_supabase()
-            self._supabase_available = True
-            return client
+            return get_supabase()
         except Exception as exc:
-            if self._supabase_available is None:
-                logging.warning("[Store] Supabase not available, using in-memory only: %s", exc)
-            self._supabase_available = False
-            return None
+            raise StorageUnavailable("Saving is unavailable. Ask the operator to configure durable storage; your work has not been saved.") from exc
 
-    # ── snapshots ─────────────────────────────────────────────────────────────
+    def _remember(self, kind, key, version):
+        versions = dict(read_versions.get() or {})
+        versions[(self._actor(), kind, key)] = version
+        read_versions.set(versions)
 
-    def add(self, snapshot: FilingSnapshot) -> None:
-        """Insert a new FilingSnapshot (create filing)."""
-        self._snapshots[snapshot.filing_id] = snapshot
-        sb = self._sb()
-        if sb is None:
-            return
-        snap_dict = _snapshot_to_dict(snapshot)
-        row = {
-            "filing_id":        snapshot.filing_id,
-            "kvk_number":       snapshot.kvk_number,
-            "entity_name":      snapshot.entity_name,
-            "period_start":     snapshot.period_start.isoformat(),
-            "period_end":       snapshot.period_end.isoformat(),
-            "taxonomy_id":      snapshot.taxonomy_id,
-            "entry_point_key":  snapshot.entry_point_key,
-            "document_sha256":  snapshot.document_sha256,
-            "state":            snapshot.state.value,
-            "snapshot":         json.dumps(snap_dict, default=_default_serialiser),
-        }
+    def _rows(self, kind, key=None):
+        owner = self._actor()
         try:
-            sb.table("filings").insert(row).execute()
-        except Exception as exc:
-            logging.error("[Store] Failed to insert filing %s: %s", snapshot.filing_id, exc)
+            if self.local_dir:
+                with self._db() as db:
+                    sql = "SELECT key,body,version FROM records WHERE kind=? AND owner=?"
+                    args = [kind, owner]
+                    if key is not None:
+                        sql += " AND key=?"; args.append(key)
+                    return [(k, json.loads(b), v) for k,b,v in db.execute(sql,args)]
+            table, keyfield, ownerfield, bodyfield = self._fields(kind)
+            query = self._sb().table(table).select(f"{keyfield},{bodyfield},version").eq(ownerfield, owner)
+            if key is not None:
+                query = query.eq(keyfield, key)
+            result = []
+            for row in query.execute().data:
+                body = row[bodyfield]
+                result.append((row[keyfield], json.loads(body) if isinstance(body,str) else body, row["version"]))
+            return result
+        except StorageUnavailable:
             raise
+        except Exception as exc:
+            raise StorageUnavailable("Storage could not be read. Please retry; no cached copy has been substituted.") from exc
 
-    def get(self, filing_id: str) -> FilingSnapshot:
-        """Fetch FilingSnapshot by ID — Supabase first, then in-memory cache."""
-        sb = self._sb()
-        if sb is not None:
-            try:
-                result = sb.table("filings").select("snapshot").eq("filing_id", filing_id).single().execute()
-                snap_data = result.data["snapshot"]
-                if isinstance(snap_data, str):
-                    snap_data = json.loads(snap_data)
-                snap = _snapshot_from_dict(snap_data)
-                self._snapshots[filing_id] = snap
-                return snap
-            except Exception as exc:
-                logging.warning("[Store] Supabase get(%s) failed: %s", filing_id, exc)
-                # Fall through to in-memory cache
+    @staticmethod
+    def _fields(kind):
+        return ("filings", "filing_id", "created_by", "snapshot") if kind == "filing" else ("workspace_documents", "sha256", "owner_id", "payload")
 
-        if filing_id in self._snapshots:
-            return self._snapshots[filing_id]
+    def _read(self, kind, key):
+        rows = self._rows(kind,key)
+        if not rows:
+            raise KeyError("This item does not exist or is not available to your account.")
+        _, body, version = rows[0]
+        self._remember(kind,key,version)
+        return body
 
-        raise KeyError(f"Filing {filing_id!r} not found. Create it first via /api/snapshot/create.")
-
-    def update(self, snapshot: FilingSnapshot) -> None:
-        """Persist mutations to an existing FilingSnapshot."""
-        self._snapshots[snapshot.filing_id] = snapshot
-        sb = self._sb()
-        if sb is None:
-            return
-        snap_dict = _snapshot_to_dict(snapshot)
+    def _write(self, kind, key, body, create=False):
+        owner = self._actor()
+        expected = (read_versions.get() or {}).get((owner,kind,key))
+        if not create and expected is None:
+            raise StorageConflict("Reload this filing before saving changes.")
+        encoded = json.dumps(body, default=_default_serialiser)
+        version = 1 if create else expected + 1
         try:
-            sb.table("filings").update({
-                "state":            snapshot.state.value,
-                "entity_name":      snapshot.entity_name,
-                "document_sha256":  snapshot.document_sha256,
-                "entry_point_key":  snapshot.entry_point_key,
-                "snapshot":         json.dumps(snap_dict, default=_default_serialiser),
-                "updated_at":       datetime.utcnow().isoformat(),
-            }).eq("filing_id", snapshot.filing_id).execute()
-        except Exception as exc:
-            logging.error("[Store] Failed to update filing %s: %s", snapshot.filing_id, exc)
+            if self.local_dir:
+                with self._db() as db:
+                    if create:
+                        db.execute("INSERT INTO records VALUES (?,?,?,?,?)", (kind,key,owner,encoded,version))
+                    else:
+                        changed = db.execute("UPDATE records SET body=?,version=? WHERE kind=? AND key=? AND owner=? AND version=?", (encoded,version,kind,key,owner,expected)).rowcount
+                        if changed != 1:
+                            raise StorageConflict("Another session changed this filing. Reload before continuing.")
+            else:
+                table, keyfield, ownerfield, bodyfield = self._fields(kind)
+                row = {bodyfield:json.loads(encoded), "version":version}
+                if kind == "filing":
+                    row.update({k: body[k] for k in ("kvk_number","entity_name","period_start","period_end","taxonomy_id","entry_point_key","document_sha256","state")})
+                    row["updated_at"] = datetime.now(timezone.utc).isoformat()
+                if create:
+                    row.update({keyfield:key,ownerfield:owner})
+                    self._sb().table(table).insert(row).execute()
+                else:
+                    result = self._sb().table(table).update(row).eq(keyfield,key).eq(ownerfield,owner).eq("version",expected).execute()
+                    if not result.data:
+                        raise StorageConflict("Another session changed this filing. Reload before continuing.")
+        except (StorageConflict, StorageUnavailable):
             raise
+        except Exception as exc:
+            raise StorageUnavailable("The change could not be saved. Keep this page open and retry.") from exc
+        self._remember(kind,key,version)
 
-    def all_ids(self) -> list[str]:
-        sb = self._sb()
-        if sb is not None:
-            try:
-                result = sb.table("filings").select("filing_id").execute()
-                return [r["filing_id"] for r in result.data]
-            except Exception as exc:
-                logging.warning("[Store] all_ids failed: %s", exc)
-        return list(self._snapshots.keys())
+    def add(self, snapshot):
+        self._write("filing",snapshot.filing_id,_snapshot_to_dict(snapshot),create=True)
 
-    # ── documents ─────────────────────────────────────────────────────────────
+    def get(self, filing_id):
+        return _snapshot_from_dict(self._read("filing",filing_id))
 
-    def add_document(self, document: ExtractedDocument) -> None:
-        """Store an ExtractedDocument (upsert — same DOCX may be re-uploaded)."""
-        self._documents[document.sha256] = document
-        sb = self._sb()
-        if sb is None:
-            return
-        doc_dict = _document_to_dict(document)
-        row = {
-            "sha256":   document.sha256,
-            "nodes":    json.dumps(doc_dict["nodes"]),
-            "headers":  json.dumps(doc_dict["headers"]),
-            "footers":  json.dumps(doc_dict["footers"]),
-            "warnings": json.dumps(doc_dict["warnings"]),
-        }
+    def update(self, snapshot):
+        previous = self._rows("filing", snapshot.filing_id)
+        if not previous:
+            raise KeyError("Filing unavailable.")
+        body = _snapshot_to_dict(snapshot)
+        body["audit_events"] = previous[0][1].get("audit_events", []) + [{
+            "actor": self._actor(), "at": datetime.now(timezone.utc).isoformat(),
+            "state": snapshot.state.value, "snapshot_sha256": sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+        }]
+        self._write("filing",snapshot.filing_id,body)
+
+    def all_ids(self):
+        return [key for key,_,_ in self._rows("filing")]
+
+    def add_document(self, document):
+        # Identical source bytes are immutable; no overwrite is needed.
+        if not self._rows("document",document.sha256):
+            self._write("document",document.sha256,_document_to_dict(document),create=True)
+
+    def get_document(self, document_sha256):
         try:
-            sb.table("documents").upsert(row, on_conflict="sha256").execute()
-        except Exception as exc:
-            logging.error("[Store] Failed to upsert document %s: %s", document.sha256, exc)
-            raise
+            return _document_from_dict(self._read("document",document_sha256))
+        except KeyError as exc:
+            raise KeyError("Source document unavailable to this account. Re-upload the same DOCX before continuing.") from exc
 
-    def get_document(self, document_sha256: str) -> ExtractedDocument:
-        """Fetch ExtractedDocument by SHA-256."""
-        if document_sha256 in self._documents:
-            return self._documents[document_sha256]
-
-        sb = self._sb()
-        if sb is not None:
-            try:
-                result = sb.table("documents").select("*").eq("sha256", document_sha256).single().execute()
-                row = result.data
-
-                def _parse(v):
-                    return json.loads(v) if isinstance(v, str) else v
-
-                doc = _document_from_dict({
-                    "sha256":   row["sha256"],
-                    "nodes":    _parse(row["nodes"]),
-                    "headers":  _parse(row["headers"]),
-                    "footers":  _parse(row["footers"]),
-                    "warnings": _parse(row["warnings"]),
-                })
-                self._documents[document_sha256] = doc
-                return doc
-            except Exception as exc:
-                logging.warning("[Store] get_document(%s) failed: %s", document_sha256, exc)
-
-        raise KeyError(
-            "The source DOCX is not available in this session. Re-upload it before mapping or packaging."
-        )
-
-    # ── workspace save / load (compatibility) ─────────────────────────────────
-
-    def save_to_disk(self, kvk_number: str, filing_id: str) -> Path:
-        """Persist snapshot to Supabase (and optionally to /tmp as a local backup)."""
+    def save_to_disk(self, kvk_number, filing_id):
         snap = self.get(filing_id)
-        if kvk_number != snap.kvk_number or not kvk_number.isdigit() or len(kvk_number) != 8:
-            raise ValueError("Workspace KVK number must match the validated filing KVK number.")
-        if not re.fullmatch(r"[A-Za-z0-9_-]+", filing_id):
-            raise ValueError("Invalid filing ID.")
-        self.update(snap)
-        # Return a synthetic path (callers only log or return it as a string)
-        return Path(f"/tmp/kvk_data/{kvk_number}-{snap.period_end.year}-{filing_id}.json")
+        if kvk_number != snap.kvk_number or not re.fullmatch(r"[0-9]{8}",kvk_number):
+            raise ValueError("Workspace KVK number must match the filing.")
+        # All mutations already commit durably; verify readability before confirming.
+        return True
 
-    def load_from_disk(self, kvk_number: str, filing_id: str | None = None) -> FilingSnapshot:
-        """Load a filing from Supabase by KVK number (and optional filing ID)."""
-        if not kvk_number.isdigit() or len(kvk_number) != 8:
+    def load_from_disk(self, kvk_number, filing_id=None):
+        if not re.fullmatch(r"[0-9]{8}",kvk_number):
             raise ValueError("KVK number must be exactly eight digits.")
+        rows = [(k,b,v) for k,b,v in self._rows("filing",filing_id) if b["kvk_number"] == kvk_number]
+        if not rows:
+            raise FileNotFoundError("No saved filing is available to your account.")
+        key,body,version = max(rows,key=lambda item:(item[1]["period_end"],item[2]))
+        self._remember("filing",key,version)
+        return _snapshot_from_dict(body)
 
-        sb = self._sb()
-        if sb is not None:
-            try:
-                query = sb.table("filings").select("snapshot").eq("kvk_number", kvk_number)
-                if filing_id:
-                    if not re.fullmatch(r"[A-Za-z0-9_-]+", filing_id):
-                        raise ValueError("Invalid filing ID.")
-                    query = query.eq("filing_id", filing_id)
-                result = query.order("updated_at", desc=True).limit(1).execute()
-                if result.data:
-                    snap_data = result.data[0]["snapshot"]
-                    if isinstance(snap_data, str):
-                        snap_data = json.loads(snap_data)
-                    snap = _snapshot_from_dict(snap_data)
-                    self._snapshots[snap.filing_id] = snap
-                    return snap
-            except (ValueError, re.error):
-                raise
-            except Exception as exc:
-                logging.warning("[Store] load_from_disk(%s) failed: %s", kvk_number, exc)
-
-        raise FileNotFoundError(f"No saved workspace for KVK {kvk_number}.")
+    def list_filings(self):
+        return [{k:body[k] for k in ("filing_id","entity_name","kvk_number","period_start","period_end","state")} for _,body,_ in self._rows("filing")]
 
 
 store = WorkspaceStore()

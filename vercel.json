@@ -36,6 +36,10 @@
       "dest": "app/frontend/admin.js"
     },
     {
+      "src": "/guidance.js",
+      "dest": "app/frontend/guidance.js"
+    },
+    {
       "src": "/style.css",
       "dest": "app/frontend/style.css"
     },

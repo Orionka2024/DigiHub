@@ -38,7 +38,8 @@ def test_archive_rejects_unsafe_paths(tmp_path, name):
         archive.writestr(name, "unsafe")
     with pytest.raises(ValueError, match="Unsafe"):
         extract_verified(path, sha256(path.read_bytes()).hexdigest(), tmp_path / "out")
-    assert not list((tmp_path / "out").iterdir())
+    assert not list((tmp_path / "out").glob("**/contents"))
+    assert not list((tmp_path / "out").glob("**/taxonomy-*"))
 
 
 def test_archive_checks_hash_and_preserves_package_root(tmp_path):

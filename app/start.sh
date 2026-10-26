@@ -62,18 +62,18 @@ echo "▶ Starting server…"
 echo ""
 
 # PYTHONPATH = Documents/ so 'import KVK_v2' resolves to KVK_v2/
-cd "$DOCUMENTS_DIR"
+cd "$KVK_V2_DIR"
 
 if [ "$PROD" = "1" ]; then
   # Production: no reload, bind to localhost only
-  PYTHONPATH="$DOCUMENTS_DIR" uvicorn KVK_v2.app.main:app \
+  PYTHONPATH="$KVK_V2_DIR" uvicorn app.main:app \
     --host 127.0.0.1 \
     --port 8000 \
     --workers 1 \
     --no-access-log
 else
   # Development: auto-reload on file changes
-  PYTHONPATH="$DOCUMENTS_DIR" uvicorn KVK_v2.app.main:app \
+  PYTHONPATH="$KVK_V2_DIR" uvicorn app.main:app \
     --host 127.0.0.1 \
     --port 8000 \
     --reload \

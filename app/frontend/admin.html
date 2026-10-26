@@ -50,7 +50,10 @@
 <body>
   <div class="header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
     <h1>Taxonomy Admin</h1>
-    <a href="index.html" class="button">Back to App</a>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <a href="/" class="button" style="text-decoration: none; padding: 6px 12px; background: #e5e7eb; color: #111827; border-radius: 4px; font-size: 0.85rem;">Back to Workspace</a>
+      <button onclick="logoutAdmin()" class="button" style="padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; font-size: 0.85rem; cursor: pointer;">Sign out</button>
+    </div>
   </div>
 
   <div class="admin-container">

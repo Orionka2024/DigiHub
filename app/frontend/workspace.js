@@ -28,8 +28,8 @@ window.workspace = {
     // Entity / taxonomy metadata
     kvkNumber: '',
     entityName: '',
-    periodStart: '2024-01-01',
-    periodEnd: '2024-12-31',
+    periodStart: '',
+    periodEnd: '',
     taxonomyId: 'NT21_KVK_20261209_b',
     entryPointKey: '',
 
@@ -60,7 +60,7 @@ window.workspace = {
   },
 
   // ── User role ──────────────────────────────────────────────────────────────
-  currentUser: { id: 'preparer', name: 'Jane (Preparer)', role: 'preparer' },
+  currentUser: { id: '', name: '', role: 'preparer' },
 
   // ── Initialisation ─────────────────────────────────────────────────────────
   async init() {
@@ -72,9 +72,8 @@ window.workspace = {
           let text = 'Preparation only: export requires a verified taxonomy and independent filing validation.';
           if (health.errors && health.errors.length > 0) {
             text += ` (${health.errors.length} taxonomy loader error(s) detected)`;
-          } else if (health.warning) {
-            text += ` (${health.warning})`;
           }
+          text += ' You can prepare a draft; the operator must complete filing setup before export.';
           notice.textContent = text;
           notice.style.display = 'block';
         } else {
@@ -83,10 +82,7 @@ window.workspace = {
         }
       }
     }).catch(()=>{});
-    // Open Entity modal on first load if no entity is set
-    if (!this.state.kvkNumber) {
-      this.openEntityModal();
-    }
+    // The guide introduces company setup before technical choices.
 
     // Attach global event listeners for new UX features
     this._attachDocumentEventListeners();
@@ -164,10 +160,11 @@ window.workspace = {
       const res = await fetch(`${this.BASE_URL}/api/taxonomy/list`);
       if (!res.ok) return;
       const data = await res.json();
+      this.state.taxonomyReleases = data.releases || [];
       const sel = document.getElementById('taxonomyIdInput');
       if (!sel) return;
       sel.innerHTML = data.taxonomies
-        .map(t => `<option value="${this._esc(t)}" ${t === this.state.taxonomyId ? 'selected' : ''}>${this._esc(t)}</option>`)
+        .map(t => `<option value="${this._esc(t)}" ${t === this.state.taxonomyId ? 'selected' : ''}>${this._esc((data.releases || []).find(r=>r.id===t)?.year || "")} reporting rules — ${this._esc((data.releases || []).find(r=>r.id===t)?.status || "unqualified")} (${this._esc(t)})</option>`)
         .join('');
         
       if (data.taxonomies.length > 0) {
@@ -200,7 +197,7 @@ window.workspace = {
       const eps = data.entry_points || {};
       this.state.entryPointMetadata = data.metadata || {};
       epSel.innerHTML = '<option value="">Choose the applicable reporting profile…</option>' + Object.keys(eps)
-        .map(k => `<option value="${this._esc(k)}" ${k === this.state.entryPointKey ? 'selected' : ''}>${this._esc(data.metadata?.[k]?.name || k)}</option>`)
+        .map(k => `<option value="${this._esc(k)}" ${k === this.state.entryPointKey ? 'selected' : ''}>${this._esc(this.profileLabel ? this.profileLabel(k, data.metadata?.[k]) : (data.metadata?.[k]?.name || k))}</option>`)
         .join('');
         
       if (Object.keys(eps).length > 0 && !Object.keys(eps).includes(this.state.entryPointKey)) {
@@ -227,19 +224,12 @@ window.workspace = {
     await this.fetchRequirements();
   },
 
-  // ── User role ──────────────────────────────────────────────────────────────
-  handleUserChange() {
-    const sel = document.getElementById('userSelector');
-    this.currentUser = {
-      id: sel.value,
-      name: sel.options[sel.selectedIndex].text,
-      role: sel.value,
-    };
-    // Pre-fill reviewer field in Map Fact modal
-    const rev = document.getElementById('mapReviewer');
-    if (rev) rev.value = this.currentUser.name;
-    this.renderInspector();
-    this.setNavStatus(`Switched to ${this.currentUser.name}`);
+  // ── Authentication ─────────────────────────────────────────────────────────
+  async logout() {
+    try {
+      await fetch(`${this.BASE_URL}/api/logout`, { method: 'POST' });
+    } catch (_) {}
+    window.location.href = '/login.html';
   },
 
   // ── Nav status ─────────────────────────────────────────────────────────────
@@ -379,6 +369,8 @@ window.workspace = {
   },
 
   async saveEntityModal() {
+    const start = document.getElementById('periodStartInput').value, end = document.getElementById('periodEndInput').value;
+    if (!start || !end || start > end || !/^\d{8}$/.test(document.getElementById('kvkInput').value.trim()) || !document.getElementById('entityNameInput').value.trim()) { alert('Enter an eight-digit KVK number, company name and valid financial-year dates.'); return; }
     if (!document.getElementById('entryPointInput').value) { alert('Choose the company size and reporting profile first.'); return; }
     if (this.state.filingId) {
       const fields = [['kvkInput','kvkNumber'],['entityNameInput','entityName'],['periodStartInput','periodStart'],['periodEndInput','periodEnd'],['taxonomyIdInput','taxonomyId'],['entryPointInput','entryPointKey']];
@@ -405,7 +397,11 @@ window.workspace = {
     // Fetch requirements for the checklist
     await this.fetchRequirements();
     
-    this.setNavStatus('Entity saved');
+    if (this.state.filingId) {
+      this.setNavStatus('Company settings saved.');
+    } else {
+      this.setNavStatus('Company settings selected. Upload your document to continue.');
+    }
   },
 
   async fetchRequirements() {
@@ -751,7 +747,7 @@ window.workspace = {
 
       html += `
         <div class="checklist-section-header">
-          <span>${this._esc(section.title_nl)}</span>
+          <span>${this._esc(section.title_en || section.title_nl)}</span>
           <span class="checklist-progress-pill">${items.length} shown</span>
         </div>`;
       
@@ -776,7 +772,7 @@ window.workspace = {
             <div class="status-icon">${icon}</div>
             <div style="flex: 1;">
               <div class="req-name">${this._esc(item.label_en || item.label_nl || item.concept_qname)}</div>
-              <div class="req-desc">${this._esc(item.concept_qname)} · ${item.status}</div>
+              <div class="req-desc">${this._esc(item.label_nl || "")} ${!item.label_en ? "(English label unavailable)" : ""}</div><details class="req-desc"><summary>Technical details · ${item.status}</summary>${this._esc(item.concept_qname)}<p>Original Dutch rule: ${this._esc(item.condition_nl || "No additional condition supplied.")}</p></details>
               ${extraAction}
             </div>
           </div>
@@ -875,7 +871,10 @@ window.workspace = {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({requirement_id:ruleId})
         });
-        if (!res.ok) throw new Error('Could not save requirement review.');
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Could not save requirement review.');
+        }
       }
       await this.fetchRequirements();
     } catch (e) { this.setNavStatus(e.message, 'error'); }
@@ -1204,7 +1203,7 @@ window.workspace = {
       container.innerHTML = `
         <div style="padding: 2rem; text-align: center; color: var(--accent-green);">
           <div style="font-size:2rem; margin-bottom:0.5rem;">✓</div>
-          <strong>No issues found — validation passed!</strong>
+          <strong>Local checks found no issues</strong>
           <p style="color:#6b7280; margin-top:0.5rem; font-size:0.85rem;">Local checks passed. Export also requires verified taxonomy and independent filing validation.</p>
         </div>`;
       return;
@@ -1244,8 +1243,8 @@ window.workspace = {
   // ── Sign-Off / Freeze ──────────────────────────────────────────────────────
   openSignOffWizard() {
     if (!this.state.filingId) return;
-    document.getElementById('signoffDate').value = new Date().toISOString().split('T')[0];
-    document.getElementById('signoffName').value = this.currentUser.name;
+    document.getElementById('signoffDate').value = ''; // Adoption date must come from the actual approval record.
+    document.getElementById('signoffName').value = ''; // Legal signatory differs from the review actor.
     document.getElementById('completionModal').style.display = 'flex';
   },
 
@@ -1329,7 +1328,7 @@ window.workspace = {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      this.setNavStatus('Package exported ✓');
+      this.setNavStatus('Package downloaded. Not submitted to KVK.');
       // Refresh state pill (now validated)
       try {
         const snapRes = await fetch(`${this.BASE_URL}/api/snapshot/${this.state.filingId}`);
@@ -1354,11 +1353,13 @@ window.workspace = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kvk_number: this.state.kvkNumber, filing_id: this.state.filingId }),
       });
-      if (!res.ok) throw new Error('Save failed');
+      if (!res.ok) { const error = await res.json(); throw new Error(error.detail || 'Save failed'); }
       this.setNavStatus('Workspace saved ✓');
+      const status = document.getElementById('saveStatus');
+      if (status) status.textContent = 'Save confirmed at ' + new Date().toLocaleTimeString();
       setTimeout(() => this.setNavStatus('Ready'), 2500);
     } catch (e) {
-      this.setNavStatus('Save failed', 'error');
+      this.setNavStatus(e.message || 'Save failed. Keep this page open and retry.', 'error');
     }
   },
 
@@ -1373,7 +1374,7 @@ window.workspace = {
       }
       clearTimeout(this._checklistRetry);
       Object.assign(this.state, {filingId:null, filingState:'draft', document:null, mappings:{},
-        activeNodeId:null, checklistSections:[], pendingRecommendations:[]});
+        activeNodeId:null, checklistSections:[], pendingRecommendations:[], kvkNumber:'', entityName:'', periodStart:'', periodEnd:'', entryPointKey:''});
       this._enablePostDocButtons();
       this.renderWorkspace();
       this.openEntityModal();

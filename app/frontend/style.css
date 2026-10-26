@@ -694,3 +694,34 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); margin-
   text-decoration: underline;
 }
 
+
+/* Guided preparation and accessible layouts. */
+.journey { background:#f4f8ff; border-bottom:1px solid #d5e1f2; padding:12px 20px; flex-shrink:0; }
+.journey-heading,.journey-actions {display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+.journey-heading p {margin:5px 0; color:#44546a; font-size:13px; max-width:980px;}
+.journey ol {display:flex; gap:22px; padding-left:20px; margin:10px 0; font-size:13px; flex-wrap:wrap;}
+.journey li {color:#536174; padding:3px 6px;}
+.journey li.current {color:#163e84; font-weight:700; background:#dfeaff; border-radius:5px;}
+.not-submitted {background:#fff2d7; color:#684100; padding:6px 10px; border-radius:6px; font-size:12px; white-space:nowrap;}
+.help-text {font-size:13px; color:#4b5563; line-height:1.55; margin:10px 0;}
+.help-steps li {margin-bottom:14px; line-height:1.55;}
+#helpContent {line-height:1.6;}
+#saveStatus,#signedInUser {font-size:12px; color:#475569;}
+.saved-filing {display:flex; flex-direction:column; gap:6px; text-align:left; width:100%; padding:16px; border:1px solid #ccd5e0; border-radius:8px; background:white; margin:8px 0; cursor:pointer;}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,summary:focus-visible {outline:3px solid #2563eb; outline-offset:3px;}
+.workspace-ribbon {height:auto; min-height:var(--ribbon-height); padding-top:8px; padding-bottom:8px; flex-wrap:wrap; gap:8px;}
+.ribbon-right {flex-wrap:wrap;}
+.modal-card {min-width:0 !important; max-width:94vw; max-height:90vh; overflow:auto;}
+@media(max-width:1000px) {
+  body {overflow:auto; height:auto; min-height:100vh;}
+  .workspace-layout {height:auto; min-height:65vh; flex-wrap:wrap; overflow:visible;}
+  .sidebar-left,.sidebar-right {width:100%; max-height:400px; flex:none;}
+  .document-area {min-width:0; width:100%;}
+  .journey {padding:12px;}
+}
+@media(max-width:540px) {.grid-2 {grid-template-columns:1fr;} .ribbon-center {width:100%;} .journey ol {gap:8px;} }
+
+.expert-tools {position:relative;font-size:12px;color:#475569;}
+.expert-tools summary {cursor:pointer;padding:8px;}
+.expert-menu {position:absolute;top:100%;right:0;display:flex;flex-direction:column;min-width:230px;background:white;border:1px solid #cbd5e1;border-radius:8px;padding:8px;z-index:30;box-shadow:0 8px 24px #0f172a22;}
+#entityModal .modal-card {width:780px;}

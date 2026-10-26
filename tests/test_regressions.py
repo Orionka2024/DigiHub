@@ -167,10 +167,13 @@ def test_calculation_detects_wrong_sum():
 @pytest.fixture
 def api(tmp_path, monkeypatch):
     monkeypatch.setenv('KVK_TAXONOMY_DIR', str(tmp_path/'taxonomies'))
-    main = importlib.import_module('KVK_v2.app.main')
-    storage = importlib.import_module('KVK_v2.app.store')
-    monkeypatch.setattr(storage, '_DATA_DIR', tmp_path)
-    monkeypatch.setattr(main, 'store', WorkspaceStore())
+    main = importlib.import_module('app.main')
+    from app.store import current_actor, read_versions
+    current_actor.set('reviewer@example.test')
+    read_versions.set({})
+    monkeypatch.setattr(main, 'get_current_user', lambda request: 'reviewer@example.test')
+    monkeypatch.setattr(main, 'get_user_role', lambda actor: 'admin')
+    monkeypatch.setattr(main, 'store', WorkspaceStore(local_dir=tmp_path))
     monkeypatch.setattr(main, 'taxonomy_registry', registry())
     monkeypatch.setattr(main, 'filing_service', FilingService(main.taxonomy_registry))
     # Synthetic taxonomy fixtures have no on-disk DTS. Do not enqueue background
@@ -242,7 +245,9 @@ def test_multiple_filings_do_not_overwrite(api):
     main.store.add(a); main.store.add(b)
     first=main.store.save_to_disk(a.kvk_number,a.filing_id)
     second=main.store.save_to_disk(b.kvk_number,b.filing_id)
-    assert first != second and first.exists() and second.exists()
+    assert first and second
+    reloaded = WorkspaceStore(local_dir=main.store.local_dir)
+    assert set(reloaded.all_ids()) == {a.filing_id, b.filing_id}
     assert main.store.load_from_disk(a.kvk_number,a.filing_id).filing_id==a.filing_id
 
 
@@ -261,6 +266,7 @@ def test_reopen_clears_validation_evidence(api):
     snap=snapshot(); snap.freeze(True,'Reviewer',date(2026,9,13)); main.store.add(snap)
     response=client.post('/api/snapshot/test-filing/reopen')
     assert response.status_code==200
+    snap = main.store.get(snap.filing_id)
     assert snap.state==FilingState.DRAFT
     assert snap.frozen_digest is None and snap.validation_digest is None
     assert not snap.is_final and snap.signatory_name is None
@@ -273,7 +279,9 @@ def test_atomic_mapping_edit(api):
       'decision':{'source_node_id':'p1','source_location':'body paragraph 1','qname':'t:Other','context_id':'c',
                   'kind':'text','value':'true','reviewer':'Reviewer'}})
     assert response.status_code==200, response.text
+    snap = main.store.get(snap.filing_id)
     assert len(snap.facts)==1 and snap.facts[0].qname=='t:Other'
+    assert snap.facts[0].source.reviewer == 'reviewer@example.test'
 
 
 def test_missing_package_does_not_register(api, tmp_path, monkeypatch):

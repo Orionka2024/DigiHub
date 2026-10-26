@@ -49,3 +49,9 @@ Arelle diagnostics, enriched verified ZIP loading, deterministic report payloads
 Choose the company size/reporting profile explicitly for new filings. The Tagging review sidebar shows outstanding mandatory/conditional items from parsed rules by default; optional concepts remain searchable under All available tags. This is preparation guidance rather than an independent completeness determination.
 
 Suggest tags for document scans table amounts using Dutch/English taxonomy labels. Review each suggested tag, amount, period, unit and scale, then confirm or skip. Already mapped source cells are excluded. Explicit year headings provide period hints; absent headings require the reviewer to choose a period. Suggestions are not saved until confirmed. Paragraph/text tagging remains manual.
+
+## Security and guided preparation update (25 October 2026)
+
+See [update and rollout requirements](docs/UPDATE_2026-10-25.md) before deploying this version. Cloud storage now requires `supabase_security_migration.sql` and explicit ownership of existing filings. Writes fail if durable storage is unavailable; there is no memory-only success fallback. For local development, explicitly configure `KVK_LOCAL_DATA_DIR` (durable SQLite, unavailable in production) and hashed local accounts. The older file-persistence descriptions above are historical.
+
+The workspace now provides English-first guidance, bilingual profile terminology, explicit financial-year entry and saved-filing selection. Taxonomy updates are checksum-isolated. Review [taxonomy qualification status](docs/TAXONOMY_QUALIFICATION.md) before enabling any production release. No live submission integration is connected.
