@@ -418,15 +418,31 @@ def get_current_user(request: Request):
         raise credentials_exception
 
 
-def get_user_role(username):
+def get_user_role(username: str) -> str:
     """Roles are assigned by the operator, never supplied by a browser."""
+    clean_user = (username or "").strip().lower()
+    if clean_user == "admin":
+        return "admin"
+
     if os.environ.get("SUPABASE_URL"):
-        from app.supabase_client import get_supabase
-        rows = get_supabase().table("digihub_users").select("username,email,role").execute().data
-        roles = [r.get("role", "preparer") for r in rows
-                 if username in (str(r.get("username", "")).lower(), str(r.get("email", "")).lower())]
-        return roles[0] if roles else "preparer"
-    return json.loads(os.environ.get("LOCAL_USER_ROLES", "{}")).get(username, "preparer")
+        try:
+            from app.supabase_client import get_supabase
+            client = get_supabase()
+            if client:
+                res = client.table("digihub_users").select("username,email,role").execute()
+                rows = res.data or []
+                roles = [r.get("role", "preparer") for r in rows
+                         if clean_user in (str(r.get("username", "")).lower(), str(r.get("email", "")).lower())]
+                if roles:
+                    return roles[0]
+        except Exception as exc:
+            logging.warning("[Auth] Could not fetch role from Supabase: %s", exc)
+
+    try:
+        local_roles = json.loads(os.environ.get("LOCAL_USER_ROLES", "{}"))
+        return local_roles.get(clean_user, "preparer")
+    except Exception:
+        return "preparer"
 
 
 @auth_router.get("/api/me")
