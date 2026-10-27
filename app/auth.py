@@ -135,6 +135,24 @@ def get_allowed_users() -> Dict[str, str]:
 
     return users
 
+def inspect_token_claims(token: str) -> dict:
+    if not token:
+        return {}
+    try:
+        import base64
+        parts = token.split(".")
+        if len(parts) >= 2:
+            p = parts[1] + "=" * (-len(parts[1]) % 4)
+            data = json.loads(base64.urlsafe_b64decode(p.encode("utf-8")))
+            return {
+                "role": data.get("role"),
+                "ref": data.get("ref"),
+                "exp": data.get("exp"),
+            }
+    except Exception as e:
+        return {"error": str(e)}
+    return {}
+
 def verify_supabase_password(email: str, password: str) -> Tuple[Optional[dict], Optional[str]]:
     """
     Authenticate email + password against Supabase GoTrue token endpoint.
@@ -155,8 +173,11 @@ def verify_supabase_password(email: str, password: str) -> Tuple[Optional[dict],
         "apikey": api_key,
         "Content-Type": "application/json",
     }
+    key_role = inspect_token_claims(api_key).get("role")
     if anon_key:
         headers["Authorization"] = f"Bearer {anon_key}"
+    elif key_role == "anon":
+        headers["Authorization"] = f"Bearer {api_key}"
 
     try:
         with httpx.Client(timeout=10.0) as http:
@@ -254,6 +275,19 @@ def login(login_data: LoginRequest, response: Response):
                 raise
             except Exception as admin_err:
                 logging.warning("[Auth] Supabase admin lookup error: %s", admin_err)
+
+            # If admin couldn't list users (e.g. key was anon key instead of service_role), check GoTrue response
+            if err_msg:
+                if "confirm" in err_msg.lower():
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail=f"Email address '{identifier}' is not confirmed in Supabase. Please confirm it in the Supabase Dashboard (Authentication -> Users)."
+                    )
+                if "invalid login credentials" in err_msg.lower() or "invalid_grant" in err_msg.lower():
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail=f"Invalid email or password for '{identifier}'. If you invited this user without a password, please set a password in the Supabase Dashboard (Authentication -> Users -> Reset Password) or add julia.kan2025@gmail.com:<password> to ALLOWED_USERS in Vercel."
+                    )
 
     # 3. If still not authenticated:
     if not authenticated_user:
