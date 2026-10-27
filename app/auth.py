@@ -308,11 +308,34 @@ def login(login_data: LoginRequest, response: Response):
 @auth_router.get("/api/auth/diagnostic")
 def auth_diagnostic():
     """Diagnostic endpoint to inspect Supabase connection and configured auth providers."""
+    def inspect_token_claims(token: str):
+        if not token:
+            return None
+        try:
+            import base64
+            parts = token.split(".")
+            if len(parts) >= 2:
+                p = parts[1] + "=" * (-len(parts[1]) % 4)
+                data = json.loads(base64.urlsafe_b64decode(p.encode("utf-8")))
+                return {
+                    "role": data.get("role"),
+                    "ref": data.get("ref"),
+                    "exp": data.get("exp"),
+                }
+        except Exception as e:
+            return {"error": str(e)}
+        return None
+
+    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+
     diag = {
         "has_jwt_secret": bool(os.environ.get("JWT_SECRET_KEY")),
         "has_supabase_url": bool(os.environ.get("SUPABASE_URL")),
-        "has_service_role_key": bool(os.environ.get("SUPABASE_SERVICE_ROLE_KEY")),
-        "has_anon_key": bool(os.environ.get("SUPABASE_ANON_KEY")),
+        "has_service_role_key": bool(service_key),
+        "service_role_key_claims": inspect_token_claims(service_key),
+        "has_anon_key": bool(anon_key),
+        "anon_key_claims": inspect_token_claims(anon_key),
         "has_allowed_users_env": bool(os.environ.get("ALLOWED_USERS")),
         "allowed_user_identifiers": list(get_allowed_users().keys()),
         "supabase_auth_users": []
