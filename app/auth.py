@@ -51,34 +51,37 @@ def get_allowed_users():
     """
     users = {}
     
+    # 1. Check Supabase digihub_users table
     try:
         from app.supabase_client import get_supabase
         client = get_supabase()
         if client:
             result = client.table("digihub_users").select("*").execute()
-            for row in result.data:
+            for row in (result.data or []):
                 pwd_hash = row.get("pwd_hash") or ""
                 if row.get("username"):
-                    users[str(row["username"]).strip().lower()] = pwd_hash
+                    users[str(row["username"]).strip().strip("'\"").lower()] = pwd_hash
                 if row.get("email"):
-                    users[str(row["email"]).strip().lower()] = pwd_hash
-            return users
+                    users[str(row["email"]).strip().strip("'\"").lower()] = pwd_hash
+            if users:
+                return users
     except Exception as exc:
-        if os.environ.get("SUPABASE_URL"):
-            raise HTTPException(503, "Sign-in service unavailable. Please try again.") from exc
         logging.warning("[Auth] Failed to load users from Supabase: %s", exc)
 
-    # Fallback for local testing if Supabase is not configured
+    # 2. Fallback from ALLOWED_USERS environment variable
     env_users = os.environ.get("ALLOWED_USERS")
     if env_users:
         try:
-            for pair in env_users.split(","):
+            cleaned = env_users.strip().strip("'\"")
+            for pair in cleaned.split(","):
+                pair = pair.strip().strip("'\"")
                 if ":" in pair:
                     username, pwd = pair.split(":", 1)
-                    users[username.strip().lower()] = pwd.strip()
+                    users[username.strip().strip("'\"").lower()] = pwd.strip().strip("'\"")
         except Exception:
             pass
             
+    # 3. Fallback from local users.json
     if not users:
         users_file = os.path.join(os.path.dirname(__file__), "..", "users.json")
         if os.path.exists(users_file):
@@ -86,7 +89,7 @@ def get_allowed_users():
                 with open(users_file, "r") as f:
                     raw_users = json.load(f)
                     for k, v in raw_users.items():
-                        users[k.strip().lower()] = v
+                        users[k.strip().strip("'\"").lower()] = v
             except Exception:
                 pass
                 
@@ -107,35 +110,52 @@ def login(login_data: LoginRequest, response: Response):
     identifier = login_data.username.strip().lower()
     password = login_data.password
     authenticated_user = None
+    supabase_err_msg = None
 
     # 1. Attempt Supabase Auth (e.g. if user added via Supabase Dashboard -> Authentication -> Users)
     try:
         from app.supabase_client import get_supabase, new_auth_client
         client = get_supabase()
         if client:
+            auth_client = new_auth_client()
             try:
-                auth_resp = new_auth_client().auth.sign_in_with_password({
+                auth_resp = auth_client.auth.sign_in_with_password({
                     "email": identifier,
                     "password": password
                 })
                 if auth_resp and getattr(auth_resp, "user", None):
                     user_obj = auth_resp.user
                     authenticated_user = (getattr(user_obj, "email", None) or identifier).lower()
-                    # Sync to digihub_users table if not yet present
-                    try:
-                        existing = client.table("digihub_users").select("id").eq("username", authenticated_user).execute()
-                        if not existing.data:
-                            client.table("digihub_users").insert({
-                                "username": authenticated_user,
-                                "pwd_hash": "supabase_auth",
-                                "role": "preparer"
-                            }).execute()
-                    except Exception:
-                        pass
             except Exception as auth_err:
-                logging.info("[Auth] Provider sign-in was not accepted.")
-    except Exception:
-        pass
+                err_text = str(auth_err)
+                logging.info("[Auth] Supabase sign-in error for %s: %s", identifier, err_text)
+                
+                # If unconfirmed, attempt to auto-confirm using service-role admin API
+                if "confirm" in err_text.lower() or "verify" in err_text.lower():
+                    try:
+                        for u in client.auth.admin.list_users():
+                            if u.email and u.email.lower() == identifier:
+                                client.auth.admin.update_user_by_id(u.id, {"email_confirm": True})
+                                logging.info("[Auth] Auto-confirmed Supabase user: %s", identifier)
+                                retry_resp = auth_client.auth.sign_in_with_password({
+                                    "email": identifier,
+                                    "password": password
+                                })
+                                if retry_resp and getattr(retry_resp, "user", None):
+                                    authenticated_user = (getattr(retry_resp.user, "email", None) or identifier).lower()
+                                break
+                    except Exception as confirm_err:
+                        logging.warning("[Auth] Auto-confirm failed: %s", confirm_err)
+
+                if not authenticated_user:
+                    if "invalid login credentials" in err_text.lower() or "invalid_grant" in err_text.lower():
+                        supabase_err_msg = "Invalid email/username or password."
+                    elif "confirm" in err_text.lower():
+                        supabase_err_msg = "Email address is not confirmed in Supabase. Please confirm it in the Supabase Dashboard."
+                    else:
+                        supabase_err_msg = err_text
+    except Exception as exc:
+        logging.warning("[Auth] Supabase client error: %s", exc)
 
     # 2. If not authenticated via Supabase Auth, verify against digihub_users table / ALLOWED_USERS / users.json
     if not authenticated_user:
@@ -144,6 +164,11 @@ def login(login_data: LoginRequest, response: Response):
         
         if hashed_password and verify_password(password, hashed_password):
             authenticated_user = identifier
+        elif supabase_err_msg:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=supabase_err_msg,
+            )
         elif not users:
             raise HTTPException(
                 status_code=401,
@@ -152,9 +177,28 @@ def login(login_data: LoginRequest, response: Response):
         else:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username/email or password",
+                detail="Incorrect username/email or password.",
             )
         
+    # Sync authenticated user to digihub_users table if not present (best-effort)
+    try:
+        from app.supabase_client import get_supabase
+        client = get_supabase()
+        if client:
+            try:
+                existing = client.table("digihub_users").select("id").eq("username", authenticated_user).execute()
+                if not existing.data:
+                    client.table("digihub_users").insert({
+                        "username": authenticated_user,
+                        "email": authenticated_user if "@" in authenticated_user else None,
+                        "pwd_hash": "supabase_auth",
+                        "role": "preparer"
+                    }).execute()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": authenticated_user}, expires_delta=access_token_expires
@@ -191,16 +235,11 @@ def get_current_user(request: Request):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        if username is None:
+        if not username:
             raise credentials_exception
+        return username.lower()
     except jwt.PyJWTError:
         raise credentials_exception
-        
-    # Check if user is known
-    users = get_allowed_users()
-    if username.lower() not in users:
-        raise credentials_exception
-    return username.lower()
 
 
 def get_user_role(username):
