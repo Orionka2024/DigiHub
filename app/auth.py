@@ -378,18 +378,29 @@ def auth_diagnostic():
         from app.supabase_client import get_supabase
         client = get_supabase()
         if client:
-            users = client.auth.admin.list_users()
-            diag["supabase_auth_users"] = [
-                {
-                    "email": u.email,
-                    "confirmed": bool(u.email_confirmed_at),
-                    "created_at": str(u.created_at) if u.created_at else None,
-                    "last_sign_in_at": str(u.last_sign_in_at) if u.last_sign_in_at else None,
-                }
-                for u in (users or [])
-            ]
+            tables_status = {}
+            for t in ["filings", "documents", "workspace_documents", "digihub_users"]:
+                try:
+                    res = client.table(t).select("*").limit(1).execute()
+                    tables_status[t] = "ok"
+                except Exception as t_err:
+                    tables_status[t] = str(t_err)
+            diag["tables"] = tables_status
+            try:
+                users = client.auth.admin.list_users()
+                diag["supabase_auth_users"] = [
+                    {
+                        "email": u.email,
+                        "confirmed": bool(u.email_confirmed_at),
+                        "created_at": str(u.created_at) if u.created_at else None,
+                        "last_sign_in_at": str(u.last_sign_in_at) if u.last_sign_in_at else None,
+                    }
+                    for u in (users or [])
+                ]
+            except Exception as admin_err:
+                diag["supabase_auth_error"] = str(admin_err)
     except Exception as exc:
-        diag["supabase_auth_error"] = str(exc)
+        diag["supabase_diag_error"] = str(exc)
 
     return diag
 
