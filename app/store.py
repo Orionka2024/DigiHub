@@ -20,6 +20,8 @@ from models import (
 )
 from docx_extract import ExtractedDocument, SourceNode, Run
 
+_DATA_DIR = Path(os.environ.get("KVK_DATA_DIR", "/tmp/kvk_data"))
+
 
 # ── Serialisation helpers (unchanged from original) ───────────────────────────
 
@@ -239,28 +241,84 @@ class WorkspaceStore:
         versions[(self._actor(), kind, key)] = version
         read_versions.set(versions)
 
+    def _document_to_db_row(self, doc_dict):
+        return {
+            "sha256": doc_dict["sha256"],
+            "nodes": doc_dict.get("nodes", []),
+            "headers": doc_dict.get("headers", []),
+            "footers": doc_dict.get("footers", []),
+            "warnings": doc_dict.get("warnings", []),
+        }
+
+    def _db_row_to_document_dict(self, row):
+        def _parse(v):
+            return json.loads(v) if isinstance(v, str) else v
+        return {
+            "sha256": row["sha256"],
+            "nodes": _parse(row.get("nodes", [])),
+            "headers": _parse(row.get("headers", [])),
+            "footers": _parse(row.get("footers", [])),
+            "warnings": _parse(row.get("warnings", [])),
+        }
+
     def _rows(self, kind, key=None):
         owner = self._actor()
+        if self.local_dir:
+            with self._db() as db:
+                sql = "SELECT key,body,version FROM records WHERE kind=? AND owner=?"
+                args = [kind, owner]
+                if key is not None:
+                    sql += " AND key=?"; args.append(key)
+                return [(k, json.loads(b), v) for k,b,v in db.execute(sql,args)]
+
         try:
-            if self.local_dir:
-                with self._db() as db:
-                    sql = "SELECT key,body,version FROM records WHERE kind=? AND owner=?"
-                    args = [kind, owner]
-                    if key is not None:
-                        sql += " AND key=?"; args.append(key)
-                    return [(k, json.loads(b), v) for k,b,v in db.execute(sql,args)]
             table, keyfield, ownerfield, bodyfield = self._fields(kind)
-            query = self._sb().table(table).select(f"{keyfield},{bodyfield},version").eq(ownerfield, owner)
-            if key is not None:
-                query = query.eq(keyfield, key)
-            result = []
-            for row in query.execute().data:
-                body = row[bodyfield]
-                result.append((row[keyfield], json.loads(body) if isinstance(body,str) else body, row["version"]))
-            return result
+            try:
+                query = self._sb().table(table).select(f"{keyfield},{bodyfield},version")
+                if ownerfield:
+                    query = query.eq(ownerfield, owner)
+                if key is not None:
+                    query = query.eq(keyfield, key)
+                data = query.execute().data
+                result = []
+                for row in data:
+                    body = row[bodyfield]
+                    result.append((row[keyfield], json.loads(body) if isinstance(body, str) else body, row.get("version", 1)))
+                return result
+            except Exception as first_err:
+                err_str = str(first_err)
+                # Fallback for document: if workspace_documents does not exist, use documents table
+                if kind == "document" and ("workspace_documents" in err_str or "PGRST205" in err_str or "42P01" in err_str):
+                    d_query = self._sb().table("documents").select("*")
+                    if key is not None:
+                        d_query = d_query.eq("sha256", key)
+                    d_res = d_query.execute()
+                    result = []
+                    for row in (d_res.data or []):
+                        doc_dict = self._db_row_to_document_dict(row)
+                        result.append((row["sha256"], doc_dict, 1))
+                    return result
+
+                # Fallback for filing: if version column does not exist on filings
+                if kind == "filing" and ("version" in err_str or "42703" in err_str):
+                    f_query = self._sb().table("filings").select(f"{keyfield},{bodyfield}")
+                    if ownerfield:
+                        f_query = f_query.eq(ownerfield, owner)
+                    if key is not None:
+                        f_query = f_query.eq(keyfield, key)
+                    f_res = f_query.execute()
+                    result = []
+                    for row in (f_res.data or []):
+                        body = row[bodyfield]
+                        result.append((row[keyfield], json.loads(body) if isinstance(body, str) else body, 1))
+                    return result
+
+                raise
         except StorageUnavailable:
             raise
         except Exception as exc:
+            if kind == "document" and key and key in self._documents:
+                return [(key, _document_to_dict(self._documents[key]), 1)]
             raise StorageUnavailable("Storage could not be read. Please retry; no cached copy has been substituted.") from exc
 
     @staticmethod
@@ -282,39 +340,73 @@ class WorkspaceStore:
             raise StorageConflict("Reload this filing before saving changes.")
         encoded = json.dumps(body, default=_default_serialiser)
         version = 1 if create else expected + 1
-        try:
-            if self.local_dir:
-                with self._db() as db:
-                    if create:
-                        db.execute("INSERT INTO records VALUES (?,?,?,?,?)", (kind,key,owner,encoded,version))
-                    else:
-                        changed = db.execute("UPDATE records SET body=?,version=? WHERE kind=? AND key=? AND owner=? AND version=?", (encoded,version,kind,key,owner,expected)).rowcount
-                        if changed != 1:
-                            raise StorageConflict("Another session changed this filing. Reload before continuing.")
-            else:
-                table, keyfield, ownerfield, bodyfield = self._fields(kind)
-                row = {bodyfield:json.loads(encoded), "version":version}
-                if kind == "filing":
-                    row.update({k: body[k] for k in ("kvk_number","entity_name","period_start","period_end","taxonomy_id","entry_point_key","document_sha256","state")})
-                    row["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        if self.local_dir:
+            with self._db() as db:
                 if create:
-                    row.update({keyfield:key,ownerfield:owner})
-                    self._sb().table(table).insert(row).execute()
+                    db.execute("INSERT INTO records VALUES (?,?,?,?,?)", (kind,key,owner,encoded,version))
                 else:
-                    result = self._sb().table(table).update(row).eq(keyfield,key).eq(ownerfield,owner).eq("version",expected).execute()
+                    changed = db.execute("UPDATE records SET body=?,version=? WHERE kind=? AND key=? AND owner=? AND version=?", (encoded,version,kind,key,owner,expected)).rowcount
+                    if changed != 1:
+                        raise StorageConflict("Another session changed this filing. Reload before continuing.")
+            self._remember(kind,key,version)
+            return
+
+        table, keyfield, ownerfield, bodyfield = self._fields(kind)
+        parsed_body = json.loads(encoded)
+        row = {bodyfield: parsed_body, "version": version}
+        if kind == "filing":
+            row.update({k: body[k] for k in ("kvk_number","entity_name","period_start","period_end","taxonomy_id","entry_point_key","document_sha256","state")})
+            row["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        try:
+            if create:
+                row.update({keyfield: key, ownerfield: owner})
+                try:
+                    self._sb().table(table).insert(row).execute()
+                except Exception as ins_err:
+                    err_str = str(ins_err)
+                    if kind == "document" and ("workspace_documents" in err_str or "PGRST205" in err_str or "42P01" in err_str):
+                        d_row = self._document_to_db_row(parsed_body)
+                        self._sb().table("documents").upsert(d_row, on_conflict="sha256").execute()
+                    elif kind == "filing" and ("version" in err_str or "42703" in err_str):
+                        row.pop("version", None)
+                        self._sb().table(table).insert(row).execute()
+                    else:
+                        raise
+            else:
+                try:
+                    result = self._sb().table(table).update(row).eq(keyfield, key).eq(ownerfield, owner).eq("version", expected).execute()
                     if not result.data:
                         raise StorageConflict("Another session changed this filing. Reload before continuing.")
+                except StorageConflict:
+                    raise
+                except Exception as upd_err:
+                    err_str = str(upd_err)
+                    if "version" in err_str or "42703" in err_str:
+                        row.pop("version", None)
+                        result = self._sb().table(table).update(row).eq(keyfield, key).eq(ownerfield, owner).execute()
+                        if not result.data:
+                            raise StorageConflict("Another session changed this filing. Reload before continuing.")
+                    else:
+                        raise
         except (StorageConflict, StorageUnavailable):
             raise
         except Exception as exc:
             raise StorageUnavailable("The change could not be saved. Keep this page open and retry.") from exc
+
         self._remember(kind,key,version)
 
     def add(self, snapshot):
+        self._snapshots[snapshot.filing_id] = snapshot
         self._write("filing",snapshot.filing_id,_snapshot_to_dict(snapshot),create=True)
 
     def get(self, filing_id):
-        return _snapshot_from_dict(self._read("filing",filing_id))
+        if filing_id in self._snapshots:
+            return self._snapshots[filing_id]
+        snap = _snapshot_from_dict(self._read("filing",filing_id))
+        self._snapshots[filing_id] = snap
+        return snap
 
     def update(self, snapshot):
         previous = self._rows("filing", snapshot.filing_id)
@@ -326,26 +418,45 @@ class WorkspaceStore:
             "state": snapshot.state.value, "snapshot_sha256": sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
         }]
         self._write("filing",snapshot.filing_id,body)
+        self._snapshots[snapshot.filing_id] = snapshot
 
     def all_ids(self):
         return [key for key,_,_ in self._rows("filing")]
 
     def add_document(self, document):
-        # Identical source bytes are immutable; no overwrite is needed.
-        if not self._rows("document",document.sha256):
-            self._write("document",document.sha256,_document_to_dict(document),create=True)
+        self._documents[document.sha256] = document
+        doc_dict = _document_to_dict(document)
+        try:
+            if not self._rows("document", document.sha256):
+                self._write("document", document.sha256, doc_dict, create=True)
+        except Exception as exc:
+            logging.warning("[Store] Failed to write document to Supabase (retaining in-memory): %s", exc)
+            if self.local_dir:
+                raise
 
     def get_document(self, document_sha256):
+        if document_sha256 in self._documents:
+            return self._documents[document_sha256]
         try:
-            return _document_from_dict(self._read("document",document_sha256))
-        except KeyError as exc:
-            raise KeyError("Source document unavailable to this account. Re-upload the same DOCX before continuing.") from exc
+            doc = _document_from_dict(self._read("document", document_sha256))
+            self._documents[document_sha256] = doc
+            return doc
+        except KeyError:
+            if not self.local_dir:
+                try:
+                    res = self._sb().table("documents").select("*").eq("sha256", document_sha256).limit(1).execute()
+                    if res.data:
+                        doc = _document_from_dict(self._db_row_to_document_dict(res.data[0]))
+                        self._documents[document_sha256] = doc
+                        return doc
+                except Exception:
+                    pass
+            raise KeyError("Source document unavailable to this account. Re-upload the same DOCX before continuing.")
 
     def save_to_disk(self, kvk_number, filing_id):
         snap = self.get(filing_id)
         if kvk_number != snap.kvk_number or not re.fullmatch(r"[0-9]{8}",kvk_number):
             raise ValueError("Workspace KVK number must match the filing.")
-        # All mutations already commit durably; verify readability before confirming.
         return True
 
     def load_from_disk(self, kvk_number, filing_id=None):
