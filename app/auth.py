@@ -382,9 +382,15 @@ def auth_diagnostic():
             for t in ["filings", "documents", "workspace_documents", "digihub_users"]:
                 try:
                     res = client.table(t).select("*").limit(1).execute()
-                    tables_status[t] = "ok"
+                    first_row_cols = list(res.data[0].keys()) if res.data else "empty_table"
+                    tables_status[t] = {"ok": True, "cols": first_row_cols}
                 except Exception as t_err:
-                    tables_status[t] = str(t_err)
+                    tables_status[t] = {"ok": False, "error": str(t_err)}
+            try:
+                client.table("filings").select("version").limit(1).execute()
+                tables_status["filings_has_version_col"] = True
+            except Exception as v_err:
+                tables_status["filings_has_version_col"] = str(v_err)
             diag["tables"] = tables_status
             try:
                 users = client.auth.admin.list_users()
