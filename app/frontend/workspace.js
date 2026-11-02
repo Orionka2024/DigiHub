@@ -434,6 +434,16 @@ window.workspace = {
       this.renderChecklist();
       return;
     }
+    const container = document.getElementById('checklistContainer');
+    if (container && (!this.state.checklistSections || this.state.checklistSections.length === 0)) {
+      const epName = this.state.entryPointMetadata?.[this.state.entryPointKey]?.name || this.state.entryPointKey;
+      container.innerHTML = `
+        <div class="empty-state" style="padding:1.5rem 1rem; text-align:center;">
+          <div style="font-size:1.6rem; margin-bottom:0.5rem;">⏳</div>
+          <strong style="color:var(--text-primary); font-size:0.85rem; display:block; margin-bottom:0.4rem;">Loading compulsory KVK tags…</strong>
+          <p style="color:#64748b; font-size:0.75rem; line-height:1.4;">Fetching requirements for <strong>${this._esc(epName)}</strong>. Please wait a moment…</p>
+        </div>`;
+    }
     try {
       let url = `${this.BASE_URL}/api/taxonomy/${this.state.taxonomyId}/checklist?entry_point_key=${this.state.entryPointKey}`;
       if (this.state.filingId) {
@@ -445,11 +455,21 @@ window.workspace = {
         clearTimeout(this._checklistRetry);
         this._checklistRetry = setTimeout(() => {
           if (key === this.state.taxonomyId + ':' + this.state.entryPointKey) this.fetchRequirements();
-        }, 5000);
-        this.setNavStatus('Taxonomy checklist is loading. You can continue reviewing the source.', 'loading');
+        }, 2000);
+        this.setNavStatus('Taxonomy concepts are initializing on the server. Please wait…', 'loading');
+        if (container) {
+          const epName = this.state.entryPointMetadata?.[this.state.entryPointKey]?.name || this.state.entryPointKey;
+          container.innerHTML = `
+            <div class="empty-state" style="padding:1.5rem 1rem; text-align:center;">
+              <div style="font-size:1.6rem; margin-bottom:0.5rem;">⏳</div>
+              <strong style="color:var(--text-primary); font-size:0.85rem; display:block; margin-bottom:0.4rem;">Loading compulsory KVK tags…</strong>
+              <p style="color:#64748b; font-size:0.75rem; line-height:1.4;">The taxonomy rules for <strong>${this._esc(epName)}</strong> are initializing on the server. Retrying automatically…</p>
+            </div>`;
+        }
         return;
       }
       if (!res.ok) throw new Error('Taxonomy checklist is unavailable.');
+      this.state.checklistSections = await res.json();
       const options = document.getElementById('tagConceptOptions');
       if (options) options.innerHTML = this.state.checklistSections.flatMap(s => s.items)
         .map(item => {
@@ -458,6 +478,7 @@ window.workspace = {
           return `<option value="${this._esc(item.concept_qname)}" label="${this._esc(mainLabel + altLabel)}">${this._esc(mainLabel + ' — ' + item.concept_qname)}</option>`;
         }).join('');
       this.renderChecklist();
+      this.setNavStatus('Compulsory tags ready.');
     } catch (e) {
       this.setNavStatus(e.message, 'error');
     }
@@ -812,13 +833,23 @@ window.workspace = {
     const container = document.getElementById('checklistContainer');
     if (!container) return;
     if (!this.state.checklistSections || this.state.checklistSections.length === 0) {
-      container.innerHTML = `
-        <div class="empty-state" style="padding:1.5rem 1rem; text-align:center;">
-          <div style="font-size:1.8rem; margin-bottom:0.5rem;">📋</div>
-          <strong style="color:var(--text-primary); font-size:0.85rem; display:block; margin-bottom:0.4rem;">What is compulsory to tag?</strong>
-          <p style="color:#64748b; font-size:0.75rem; margin-bottom:0.85rem; line-height:1.4;">Compulsory tags depend on your company size (Micro, Small, Medium, Large). Set your profile to view your mandatory tags:</p>
-          <button class="btn-primary" style="font-size:0.78rem; padding:0.35rem 0.8rem;" onclick="workspace.openEntityModal()">Set Company Size & Year</button>
-        </div>`;
+      if (this.state.entryPointKey) {
+        const epName = this.state.entryPointMetadata?.[this.state.entryPointKey]?.name || this.state.entryPointKey;
+        container.innerHTML = `
+          <div class="empty-state" style="padding:1.5rem 1rem; text-align:center;">
+            <div style="font-size:1.8rem; margin-bottom:0.5rem;">⏳</div>
+            <strong style="color:var(--text-primary); font-size:0.85rem; display:block; margin-bottom:0.4rem;">Loading compulsory KVK tags…</strong>
+            <p style="color:#64748b; font-size:0.75rem; line-height:1.4;">Fetching requirements for <strong>${this._esc(epName)}</strong>. Please wait a moment…</p>
+          </div>`;
+      } else {
+        container.innerHTML = `
+          <div class="empty-state" style="padding:1.5rem 1rem; text-align:center;">
+            <div style="font-size:1.8rem; margin-bottom:0.5rem;">📋</div>
+            <strong style="color:var(--text-primary); font-size:0.85rem; display:block; margin-bottom:0.4rem;">What is compulsory to tag?</strong>
+            <p style="color:#64748b; font-size:0.75rem; margin-bottom:0.85rem; line-height:1.4;">Compulsory tags depend on your company size (Micro, Small, Medium, Large). Set your profile to view your mandatory tags:</p>
+            <button class="btn-primary" style="font-size:0.78rem; padding:0.35rem 0.8rem;" onclick="workspace.openEntityModal()">Set Company Size & Year</button>
+          </div>`;
+      }
       return;
     }
 

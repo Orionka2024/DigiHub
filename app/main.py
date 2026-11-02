@@ -232,7 +232,7 @@ import threading
 _ep_lock = threading.Lock()
 
 
-def _ensure_entry_point_loaded(release, key: str, wait_seconds: float = 6.0) -> str:
+def _ensure_entry_point_loaded(release, key: str, wait_seconds: float = 15.0) -> str:
     status_key = f"{release.id}:{key}"
     status = _ep_loading_status.get(status_key)
     if status in {"done", "incomplete", "error"}:
