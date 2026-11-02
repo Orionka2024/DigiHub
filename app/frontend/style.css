@@ -539,6 +539,44 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); margin-
   border-top: 1px solid var(--border-color);
 }
 
+/* ── Side-docked Tag Inspector (never covers the table) ─────────────────────── */
+#mapFactModal.modal-overlay {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  pointer-events: none !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: stretch !important;
+  padding: 0 !important;
+  z-index: 250;
+}
+
+#mapFactModal .modal-card {
+  pointer-events: auto !important;
+  width: 460px !important;
+  max-width: 44vw !important;
+  min-width: 360px !important;
+  height: calc(100vh - var(--ribbon-height) - 16px) !important;
+  max-height: calc(100vh - var(--ribbon-height) - 16px) !important;
+  margin-top: calc(var(--ribbon-height) + 8px) !important;
+  margin-right: 14px !important;
+  margin-bottom: 8px !important;
+  border-radius: var(--radius) !important;
+  border: 1px solid var(--border-accent) !important;
+  box-shadow: -8px 0 32px rgba(15, 23, 42, 0.22) !important;
+  background: #ffffff !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 1.25rem !important;
+}
+
+#mapFactModal .modal-card .grid-gap {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+
 /* ── Grid utilities ──────────────────────────────────────────────────────────── */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .grid-gap { display: grid; gap: 1rem; }

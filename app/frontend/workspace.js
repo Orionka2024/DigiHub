@@ -812,26 +812,54 @@ window.workspace = {
     const container = document.getElementById('checklistContainer');
     if (!container) return;
     if (!this.state.checklistSections || this.state.checklistSections.length === 0) {
-      container.innerHTML = '<div class="empty-state">Set entity and taxonomy to see required tags.</div>';
+      container.innerHTML = `
+        <div class="empty-state" style="padding:1.5rem 1rem; text-align:center;">
+          <div style="font-size:1.8rem; margin-bottom:0.5rem;">📋</div>
+          <strong style="color:var(--text-primary); font-size:0.85rem; display:block; margin-bottom:0.4rem;">What is compulsory to tag?</strong>
+          <p style="color:#64748b; font-size:0.75rem; margin-bottom:0.85rem; line-height:1.4;">Compulsory tags depend on your company size (Micro, Small, Medium, Large). Set your profile to view your mandatory tags:</p>
+          <button class="btn-primary" style="font-size:0.78rem; padding:0.35rem 0.8rem;" onclick="workspace.openEntityModal()">Set Company Size & Year</button>
+        </div>`;
       return;
     }
 
     const mappedQnames = new Set(Object.values(this.state.mappings).map(m => m.qname));
-    const filter = document.getElementById('checklistFilter')?.value || 'outstanding';
+    const filter = document.getElementById('checklistFilter')?.value || 'mandatory';
     const query = (document.getElementById('checklistSearch')?.value || '').trim().toLowerCase();
     const profile = document.getElementById('taggingProfile');
     if (profile) profile.textContent = `Selected profile: ${this.state.entryPointMetadata?.[this.state.entryPointKey]?.name || this.state.entryPointKey}. ${this.state.taxonomyId}`;
+
+    const allItems = this.state.checklistSections.flatMap(s => s.items);
+    const compulsoryTotal = allItems.filter(i => i.status === 'mandatory').length;
+    const compulsorySatisfied = allItems.filter(i => i.status === 'mandatory' && (i.is_satisfied || mappedQnames.has(i.concept_qname))).length;
+
     const matches = item => {
       const reviewed = item.is_satisfied || mappedQnames.has(item.concept_qname);
       const visible = filter === 'all' || (filter === 'mapped' ? reviewed :
         filter === 'outstanding' ? !reviewed && ['mandatory', 'conditional'].includes(item.status) : item.status === filter);
       return visible && (!query || `${item.label_nl} ${item.label_en} ${item.concept_qname}`.toLowerCase().includes(query));
     };
-    const count = this.state.checklistSections.flatMap(section => section.items).filter(matches).length;
+    const count = allItems.filter(matches).length;
     const summary = document.getElementById('checklistSummary');
-    if (summary) summary.textContent = `${count} matching items. ${count > 100 ? 'Showing the first 100; narrow your search. ' : ''}Parsed rules are preparation guidance, not filing approval.`;
+    if (summary) summary.textContent = `${count} matching items. ${count > 100 ? 'Showing the first 100; narrow your search. ' : ''}`;
+
+    let progressBanner = '';
+    if (compulsoryTotal > 0) {
+      const pct = Math.round((compulsorySatisfied / compulsoryTotal) * 100);
+      progressBanner = `
+        <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:8px 10px; margin-bottom:10px; font-size:0.75rem;">
+          <div style="display:flex; justify-content:space-between; font-weight:600; color:#166534; margin-bottom:4px;">
+            <span>⭐ Compulsory KVK tags</span>
+            <span>${compulsorySatisfied}/${compulsoryTotal} (${pct}%)</span>
+          </div>
+          <div style="background:#dcfce7; height:5px; border-radius:3px; overflow:hidden;">
+            <div style="background:#16a34a; width:${pct}%; height:100%; transition:width 0.3s;"></div>
+          </div>
+        </div>
+      `;
+    }
+
     let shown = 0;
-    let html = '';
+    let html = progressBanner;
 
     for (const section of this.state.checklistSections) {
       const items = section.items.filter(matches).slice(0, Math.max(0, 100 - shown));
@@ -850,6 +878,8 @@ window.workspace = {
       for (const item of items) {
         const isMapped = item.is_satisfied || mappedQnames.has(item.concept_qname);
         const statusClass = isMapped ? 'done' : (item.status === 'conditional' ? 'conditional' : 'pending');
+        const isCompulsory = item.status === 'mandatory';
+        const compulsoryBadge = isCompulsory ? '<span class="chip red" style="font-size:0.58rem; padding:1px 5px; float:right;">COMPULSORY</span>' : '';
         const icon = isMapped 
           ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>'
           : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle></svg>';
@@ -857,8 +887,11 @@ window.workspace = {
         let extraAction = '';
         if (isMapped) {
           extraAction = `<button class="btn-secondary" style="font-size:0.68rem; padding: 2px 6px; margin-top:4px;" data-qname="${this._esc(item.concept_qname)}" onclick="event.stopPropagation(); workspace.jumpToConcept(this.dataset.qname)">🔍 Locate in doc</button>`;
-        } else if (item.status === 'conditional' && !isMapped && ['draft','reviewed'].includes(this.state.filingState)) {
-          extraAction = `<button class="btn-secondary" style="font-size:0.7rem; padding: 2px 4px; margin-top:4px;" data-rule-ids="${this._esc(JSON.stringify(item.rule_ids))}" onclick="event.stopPropagation(); workspace.markReviewedGroup(this.dataset.ruleIds)">Mark N/A</button>`;
+        } else {
+          extraAction = `<button class="btn-primary" style="font-size:0.68rem; padding: 2px 8px; margin-top:4px;" onclick="event.stopPropagation(); workspace.quickTagFromChecklist('${this._esc(item.concept_qname)}', '${this._esc(item.label_nl || '')}', '${this._esc(item.label_en || '')}')">+ Tag to doc</button>`;
+          if (item.status === 'conditional' && ['draft','reviewed'].includes(this.state.filingState)) {
+            extraAction += ` <button class="btn-secondary" style="font-size:0.68rem; padding: 2px 4px; margin-top:4px;" data-rule-ids="${this._esc(JSON.stringify(item.rule_ids))}" onclick="event.stopPropagation(); workspace.markReviewedGroup(this.dataset.ruleIds)">Mark N/A</button>`;
+          }
         }
 
         const clickToTag = !isMapped && ['draft','reviewed'].includes(this.state.filingState)
@@ -869,7 +902,7 @@ window.workspace = {
           <div class="checklist-item ${statusClass}" title="${this._esc(item.condition_nl)}" ${clickToTag}>
             <div class="status-icon">${icon}</div>
             <div style="flex: 1;">
-              <div class="req-name">${this._esc(item.label_en || item.label_nl || item.concept_qname)}</div>
+              <div class="req-name">${compulsoryBadge}${this._esc(item.label_en || item.label_nl || item.concept_qname)}</div>
               <div class="req-desc">${this._esc(item.label_nl || "")} ${!item.label_en ? "(English label unavailable)" : ""}</div><details class="req-desc"><summary>Technical details · ${item.status}</summary>${this._esc(item.concept_qname)}<p>Original Dutch rule: ${this._esc(item.condition_nl || "No additional condition supplied.")}</p></details>
               ${extraAction}
             </div>

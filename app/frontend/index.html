@@ -123,14 +123,17 @@
             <button class="btn-primary" onclick="workspace.autoTagDocument()">Suggest tags for document</button>
             <p style="font-size:12px;margin:0">Review each suggestion before it is saved. Suggestions currently cover table amounts.</p>
             <select id="checklistFilter" class="form-input" aria-label="Tag list filter" onchange="workspace.renderChecklist()">
-              <option value="outstanding">Needs review</option><option value="mandatory">Required by parsed rules</option>
-              <option value="conditional">Conditional</option><option value="mapped">Reviewed / tagged</option><option value="all">All available tags</option>
+              <option value="mandatory" selected>⭐ Compulsory KVK tags (Required)</option>
+              <option value="outstanding">All pending tags (Compulsory + Conditional)</option>
+              <option value="conditional">Conditional tags</option>
+              <option value="mapped">✓ Completed / Tagged</option>
+              <option value="all">All available tags</option>
             </select>
             <input id="checklistSearch" class="form-input" placeholder="Search tags…" aria-label="Search tags" oninput="workspace.renderChecklist()">
             <div id="checklistSummary" style="font-size:12px"></div>
           </div>
           <div class="sidebar-content" id="checklistContainer">
-            <div class="empty-state">Set entity and taxonomy to see required tags.</div>
+            <div class="empty-state">Choose company size and year to load compulsory tags.</div>
           </div>
         </div>
       </div>
