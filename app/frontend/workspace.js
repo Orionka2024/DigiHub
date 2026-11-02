@@ -450,10 +450,13 @@ window.workspace = {
         return;
       }
       if (!res.ok) throw new Error('Taxonomy checklist is unavailable.');
-      this.state.checklistSections = await res.json();
       const options = document.getElementById('tagConceptOptions');
       if (options) options.innerHTML = this.state.checklistSections.flatMap(s => s.items)
-        .map(item => `<option value="${this._esc(item.concept_qname)}">${this._esc(item.label_en || item.label_nl)}</option>`).join('');
+        .map(item => {
+          const mainLabel = item.label_en || item.label_nl || item.concept_qname;
+          const altLabel = item.label_nl && item.label_en ? ` (${item.label_nl})` : '';
+          return `<option value="${this._esc(item.concept_qname)}" label="${this._esc(mainLabel + altLabel)}">${this._esc(mainLabel + ' — ' + item.concept_qname)}</option>`;
+        }).join('');
       this.renderChecklist();
     } catch (e) {
       this.setNavStatus(e.message, 'error');
@@ -1014,6 +1017,12 @@ window.workspace = {
 
     const node = this.state.document.nodes.find(n => n.id === parentNodeId);
     if (!node) return;
+
+    if (node.kind === 'table' && !isCell) {
+      alert("In financial statement reporting, individual numbers inside the table are mapped to taxonomy concepts.\n\nPlease click on a specific cell inside the table to select and tag its amount.");
+      return;
+    }
+
     this.state._pendingNodeId = nodeId;
 
     if (isCell) {
@@ -1037,10 +1046,18 @@ window.workspace = {
 
     this.state._reviewingSuggestion = false;
     if (document.getElementById('skipSuggestion')) document.getElementById('skipSuggestion').style.display = 'none';
-    // Reset kind
-    document.getElementById('mapKind').value = 'text';
+
+    // Auto-detect numeric kind for table numbers
+    const isNum = isCell && /^-?[\d,.\s]+$/.test((cellText || '').trim()) && (cellText || '').trim().length > 0;
+    document.getElementById('mapKind').value = isNum ? 'numeric' : 'text';
     document.getElementById('numericLocale').value = 'nl';
     this.updateMapKind();
+
+    // Pre-fill context if period is set and context is empty
+    const ctxInput = document.getElementById('mapContextId');
+    if (ctxInput && !ctxInput.value && this.state.periodEnd) {
+      ctxInput.value = isNum ? 'ctx_instant_end' : 'ctx_current';
+    }
 
     document.getElementById('mapQname').value = '';
 
