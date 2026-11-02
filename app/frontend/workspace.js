@@ -123,16 +123,27 @@ window.workspace = {
 
     // Delegated Hover Tooltip
     viewer.addEventListener('mouseover', (e) => {
-      const nodeEl = e.target.closest('.mapped');
+      const nodeEl = e.target.closest('[id^="node-"]');
       if (nodeEl && nodeEl.id && nodeEl.id.startsWith('node-')) {
         const nodeId = nodeEl.id.replace('node-', '');
         const mapping = this.state.mappings[nodeId];
         if (mapping) {
+          const origin = mapping.origin || 'auto';
+          const originBadge = origin === 'auto' ? '<span class="tt-badge auto">🟢 Auto</span>' :
+                              (origin === 'manual' ? '<span class="tt-badge manual">🟡 Manual</span>' :
+                              '<span class="tt-badge modified">🟠 Modified</span>');
+          const conceptLabel = this._findConceptLabel(mapping.qname) || (mapping.qname.includes(':') ? mapping.qname.split(':')[1] : mapping.qname);
           tooltip.innerHTML = `
-            <div class="tt-row"><strong>QName:</strong> ${this._esc(mapping.qname)}</div>
-            <div class="tt-row"><strong>Context:</strong> ${this._esc(mapping.contextId)}</div>
-            <div class="tt-row"><strong>Value:</strong> ${mapping.value !== null ? this._esc(String(mapping.value)) : '—'}</div>
-            <div class="tt-row"><strong>Reviewer:</strong> ${this._esc(mapping.reviewer)}</div>
+            <div class="tt-header">
+              <span class="tt-title">${this._esc(conceptLabel)}</span>
+              ${originBadge}
+            </div>
+            <div class="tt-qname">${this._esc(mapping.qname)}</div>
+            <div class="tt-grid">
+              <strong>Context:</strong><span>${this._esc(mapping.contextId)}</span>
+              <strong>Value:</strong><span>${mapping.value !== null && mapping.value !== undefined ? this._esc(String(mapping.value)) : '—'}</span>
+              <strong>Reviewer:</strong><span>${this._esc(mapping.reviewer || '—')}</span>
+            </div>
           `;
           tooltip.style.display = 'block';
         }
@@ -141,15 +152,28 @@ window.workspace = {
 
     viewer.addEventListener('mousemove', (e) => {
       if (tooltip.style.display === 'block') {
-        tooltip.style.left = (e.clientX + 15) + 'px';
-        tooltip.style.top = (e.clientY + 15) + 'px';
+        const tw = tooltip.offsetWidth || 280;
+        const th = tooltip.offsetHeight || 120;
+        let x = e.clientX + 15;
+        let y = e.clientY + 15;
+        if (typeof window !== 'undefined' && window.innerWidth) {
+          if (x + tw > window.innerWidth - 10) x = e.clientX - tw - 12;
+          if (y + th > window.innerHeight - 10) y = e.clientY - th - 12;
+        }
+        tooltip.style.left = (x > 10 ? x : 10) + 'px';
+        tooltip.style.top = (y > 10 ? y : 10) + 'px';
       }
     });
 
     viewer.addEventListener('mouseout', (e) => {
-      const nodeEl = e.target.closest('.mapped');
-      if (nodeEl) {
+      const related = e.relatedTarget;
+      if (!related || (viewer.contains && !viewer.contains(related))) {
         tooltip.style.display = 'none';
+      } else {
+        const nodeEl = e.target.closest('[id^="node-"]');
+        if (nodeEl && (!related.closest || related.closest('[id^="node-"]') !== nodeEl)) {
+          tooltip.style.display = 'none';
+        }
       }
     });
   },
@@ -553,24 +577,65 @@ window.workspace = {
 
     let html = '';
     for (const node of this.state.document.nodes) {
-      const isMapped = !!this.state.mappings[node.id];
-      const mappedDot = isMapped ? '🟢 ' : '';
       if (node.kind === 'paragraph') {
-        // Only show paragraphs with a style that looks like a heading
-        const isHeading = node.style && /heading|titel|kop/i.test(node.style);
-        if (isHeading || (node.style && node.style.includes('1'))) {
-          html += `<a class="nav-item heading ${isMapped ? 'mapped' : ''}" onclick="workspace.scrollToNode('node-${node.id}')">${mappedDot}${this._esc(node.text.slice(0, 60))}</a>`;
+        const isHeadingStyle = node.style && /heading|titel|kop/i.test(node.style);
+        const isBoldShort = !isHeadingStyle && node.runs && node.runs.some(r => r.bold) && node.text.trim().length > 0 && node.text.trim().length < 90;
+        if (isHeadingStyle || isBoldShort || (node.style && node.style.includes('1'))) {
+          const isMapped = !!this.state.mappings[node.id];
+          const dot = isMapped ? '🟢 ' : '';
+          const activeClass = this.state.activeSectionId === `node-${node.id}` ? 'active' : '';
+          html += `<a class="nav-item heading ${activeClass}" onclick="workspace.scrollToNode('node-${node.id}')"><span class="nav-item-title">${dot}${this._esc(node.text.slice(0, 60))}</span></a>`;
         }
       } else if (node.kind === 'table') {
-        html += `<a class="nav-item table ${isMapped ? 'mapped' : ''}" onclick="workspace.scrollToNode('node-${node.id}')">${mappedDot}Table: ${node.location}</a>`;
+        let numCells = 0;
+        let mappedCells = 0;
+        for (let r = 0; r < node.rows.length; r++) {
+          for (let c = 0; c < node.rows[r].length; c++) {
+            const cellVal = node.rows[r][c];
+            if (/^-?[\d,.\s]+$/.test(cellVal.trim()) && cellVal.trim().length > 0) {
+              numCells++;
+              if (this.state.mappings[`${node.id}-r${r}c${c}`]) {
+                mappedCells++;
+              }
+            }
+          }
+        }
+        let chipClass = '';
+        let dot = '⚪ ';
+        if (numCells > 0 && mappedCells === numCells) {
+          chipClass = 'complete';
+          dot = '🟢 ';
+        } else if (mappedCells > 0) {
+          chipClass = 'partial';
+          dot = '🟡 ';
+        }
+        const activeClass = this.state.activeSectionId === `node-${node.id}` ? 'active' : '';
+        const progressChip = numCells > 0 ? `<span class="nav-progress-chip ${chipClass}">${mappedCells}/${numCells}</span>` : '';
+        html += `<a class="nav-item table ${activeClass}" onclick="workspace.scrollToNode('node-${node.id}')"><span class="nav-item-title">${dot}${this._esc(node.location)}</span>${progressChip}</a>`;
       }
     }
     container.innerHTML = html || '<div class="empty-state">No navigable headings found.</div>';
   },
 
   scrollToNode(id) {
+    this.state.activeSectionId = id;
     const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('pulse-highlight');
+      setTimeout(() => el.classList.remove('pulse-highlight'), 1400);
+    }
+    this.renderDocumentMap();
+  },
+
+  _findConceptLabel(qname) {
+    if (!this.state.checklistSections || !qname) return '';
+    for (const sec of this.state.checklistSections) {
+      if (!sec.items) continue;
+      const found = sec.items.find(i => i.concept_qname === qname);
+      if (found) return found.label_en || found.label_nl || '';
+    }
+    return '';
   },
 
   renderDocumentViewer() {
@@ -584,8 +649,16 @@ window.workspace = {
       const clickAttr = `onclick="workspace.selectNode('${node.id}')" id="node-${node.id}"`;
 
       if (node.kind === 'paragraph') {
-        const classes = ['para-node', isMapped ? 'mapped' : '', isActive ? 'active' : ''].filter(Boolean).join(' ');
-        const badge = isMapped ? `<span class="chip green" style="font-size:0.62rem; float:right;">✓ ${this._esc(this.state.mappings[node.id].qname.split(':')[1] || this.state.mappings[node.id].qname)}</span>` : '';
+        const mapping = this.state.mappings[node.id];
+        const origin = mapping?.origin || 'auto';
+        const originClass = isMapped ? `mapped mapped-${origin}` : '';
+        const classes = ['para-node', originClass, isActive ? 'active' : ''].filter(Boolean).join(' ');
+        
+        let badgeColor = 'green';
+        if (origin === 'manual') badgeColor = 'amber';
+        else if (origin === 'modified') badgeColor = 'orange';
+
+        const badge = isMapped ? `<span class="chip ${badgeColor}" style="font-size:0.62rem; float:right;">✓ ${this._esc(mapping.qname.split(':')[1] || mapping.qname)}</span>` : '';
         const style = node.style ? node.style.toLowerCase() : '';
         let tag = 'p';
         if (/heading 1|kop 1/.test(style)) tag = 'h2';
@@ -614,17 +687,37 @@ window.workspace = {
             const isCellActive = this.state.activeNodeId === cellId;
             const cellMapped = this.state.mappings[cellId];
             
-            let bg = 'transparent';
-            if (isCellActive) bg = 'rgba(37, 99, 235, 0.1)';
-            else if (cellMapped) bg = 'rgba(22, 163, 74, 0.1)';
+            const cellClasses = [];
+            let cellBg = 'transparent';
+            let cellBorderColor = '#e2e8f0';
+            let badgeHtml = '';
 
-            const cellStyle = `padding:0.4rem; border:1px solid #e2e8f0; text-align:${align}; background:${bg}; cursor:pointer;`;
-            html += `<td id="node-${cellId}" style="${cellStyle}" onclick="workspace.selectNode('${cellId}')" oncontextmenu="workspace.showContextMenu(event, '${cellId}')">`;
-            
-            if (cellMapped) {
-              html += `<div style="color:var(--accent-green); font-weight:700; font-size:0.7rem; margin-bottom:0.2rem;">✓ ${this._esc(cellMapped.qname)}</div>`;
+            if (isCellActive) {
+              cellClasses.push('cell-active');
+              cellBg = 'rgba(37, 99, 235, 0.15)';
+              cellBorderColor = 'var(--accent-blue)';
+            } else if (cellMapped) {
+              cellClasses.push('mapped');
+              const origin = cellMapped.origin || 'auto';
+              cellClasses.push(`cell-mapped-${origin}`);
+              if (origin === 'auto') {
+                cellBg = 'rgba(22, 163, 74, 0.12)';
+                cellBorderColor = 'var(--accent-green)';
+                badgeHtml = `<div style="color:var(--accent-green); font-weight:700; font-size:0.68rem; margin-bottom:0.2rem;">✓ ${this._esc(cellMapped.qname.split(':')[1] || cellMapped.qname)}</div>`;
+              } else if (origin === 'manual') {
+                cellBg = 'rgba(234, 179, 8, 0.16)';
+                cellBorderColor = '#ca8a04';
+                badgeHtml = `<div style="color:#a16207; font-weight:700; font-size:0.68rem; margin-bottom:0.2rem;">✓ ${this._esc(cellMapped.qname.split(':')[1] || cellMapped.qname)}</div>`;
+              } else if (origin === 'modified') {
+                cellBg = 'rgba(249, 115, 22, 0.16)';
+                cellBorderColor = '#ea580c';
+                badgeHtml = `<div style="color:#c2410c; font-weight:700; font-size:0.68rem; margin-bottom:0.2rem;">✓ ${this._esc(cellMapped.qname.split(':')[1] || cellMapped.qname)}</div>`;
+              }
             }
-            html += `${this._esc(cell)}</td>`;
+
+            const cellStyle = `padding:0.4rem; border:1px solid ${cellBorderColor}; text-align:${align}; background:${cellBg}; cursor:pointer;`;
+            html += `<td id="node-${cellId}" class="${cellClasses.join(' ')}" style="${cellStyle}" onclick="workspace.selectNode('${cellId}')" oncontextmenu="workspace.showContextMenu(event, '${cellId}')">`;
+            html += `${badgeHtml}${this._esc(cell)}</td>`;
           }
           html += '</tr>';
         }
@@ -759,8 +852,10 @@ window.workspace = {
           : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle></svg>';
 
         let extraAction = '';
-        if (item.status === 'conditional' && !isMapped && ['draft','reviewed'].includes(this.state.filingState)) {
-            extraAction = `<button class="btn-secondary" style="font-size:0.7rem; padding: 2px 4px; margin-top:4px;" data-rule-ids="${this._esc(JSON.stringify(item.rule_ids))}" onclick="event.stopPropagation(); workspace.markReviewedGroup(this.dataset.ruleIds)">Mark N/A</button>`;
+        if (isMapped) {
+          extraAction = `<button class="btn-secondary" style="font-size:0.68rem; padding: 2px 6px; margin-top:4px;" data-qname="${this._esc(item.concept_qname)}" onclick="event.stopPropagation(); workspace.jumpToConcept(this.dataset.qname)">🔍 Locate in doc</button>`;
+        } else if (item.status === 'conditional' && !isMapped && ['draft','reviewed'].includes(this.state.filingState)) {
+          extraAction = `<button class="btn-secondary" style="font-size:0.7rem; padding: 2px 4px; margin-top:4px;" data-rule-ids="${this._esc(JSON.stringify(item.rule_ids))}" onclick="event.stopPropagation(); workspace.markReviewedGroup(this.dataset.ruleIds)">Mark N/A</button>`;
         }
 
         const clickToTag = !isMapped && ['draft','reviewed'].includes(this.state.filingState)
@@ -781,6 +876,18 @@ window.workspace = {
     }
     
     container.innerHTML = html || '<div class="empty-state">No items match this view. Use All available tags to browse the selected profile.</div>';
+  },
+
+  jumpToConcept(qname) {
+    if (!this.state.mappings || !this.state.document) return;
+    const entry = Object.entries(this.state.mappings).find(([nodeId, m]) => m.qname === qname);
+    if (!entry) {
+      alert(`Concept "${qname}" is satisfied by rules or not bound to an individual cell/paragraph.`);
+      return;
+    }
+    const [nodeId] = entry;
+    this.selectNode(nodeId);
+    this.scrollToNode(`node-${nodeId}`);
   },
 
   quickTagFromChecklist(qname, label_nl, label_en) {
@@ -1023,6 +1130,16 @@ window.workspace = {
       }
       const result = await res.json();
 
+      let origin = 'manual';
+      if (this.state._reviewingSuggestion) {
+        const base = this.state._suggestionBaseline;
+        if (base && (base.qname !== qname || String(base.value) !== String(rawValue) || (base.contextId && base.contextId !== contextId))) {
+          origin = 'modified';
+        } else {
+          origin = 'auto';
+        }
+      }
+
       // Store locally
       this.state.mappings[nodeId] = {
         factId: result.fact_id,
@@ -1031,6 +1148,7 @@ window.workspace = {
         value,
         contextId,
         reviewer,
+        origin,
       };
 
       document.getElementById('mapFactModal').style.display = 'none';
@@ -1069,7 +1187,7 @@ window.workspace = {
       const cell = location.match(/, Row (\d+), Col (\d+)$/);
       const key = cell ? `${node.id}-r${Number(cell[1])-1}c${Number(cell[2])-1}` : node.id;
       this.state.mappings[key] = {factId: fact.id, qname: fact.qname, kind: fact.kind,
-        value: fact.value, contextId: fact.context_id, reviewer: fact.source.reviewer};
+        value: fact.value, contextId: fact.context_id, reviewer: fact.source.reviewer, origin: fact.origin || 'auto'};
     }
     document.getElementById('entityStatusLabel').innerText = `${snap.kvk_number} · ${snap.entity_name}`;
     this.updateStatePill(snap.state);
@@ -1093,6 +1211,11 @@ window.workspace = {
     document.getElementById('mapValue').value = rec.value;
     document.getElementById('numericLocale').value = 'en';
     document.getElementById('mapDecimals').value = rec.value.includes('.') ? rec.value.split('.')[1].length : 0;
+    this.state._suggestionBaseline = {
+      qname: rec.qname,
+      value: rec.value,
+      contextId: document.getElementById('mapContextId').value,
+    };
     this.updateMapKind();
     this.setNavStatus(`Review the amount, period and unit (${this.state.pendingRecommendations.length} recommendations remaining).`);
   },

@@ -138,11 +138,13 @@
 
     <!-- Centre: Document Viewer -->
     <main class="main-viewer">
-      <!-- Colour-Coded Legend -->
-      <div style="display: flex; gap: 1rem; justify-content: center; margin-bottom: 1rem; font-size: 0.8rem; color: #475569;">
-        <span style="display: flex; align-items: center; gap: 0.25rem;"><span style="display:inline-block; width: 12px; height: 12px; border: 2px solid var(--accent-green); background: rgba(22, 163, 74, 0.1); border-radius: 2px;"></span> Tagged</span>
-        <span style="display: flex; align-items: center; gap: 0.25rem;"><span style="display:inline-block; width: 12px; height: 12px; border: 2px solid var(--accent-blue); background: rgba(37, 99, 235, 0.1); border-radius: 2px;"></span> Selected</span>
-        <span style="display: flex; align-items: center; gap: 0.25rem;"><span style="display:inline-block; width: 12px; height: 12px; border: 1px solid #ccc; background: white; border-radius: 2px;"></span> Untagged</span>
+      <!-- Colour-Coded Legend (Caseware standard iXBRL review model) -->
+      <div style="display: flex; flex-wrap: wrap; gap: 0.85rem; justify-content: center; margin-bottom: 1rem; font-size: 0.78rem; color: #475569; background: #ffffff; padding: 0.5rem 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+        <span style="display: flex; align-items: center; gap: 0.35rem;" title="Standard tag matching auto-tagging default"><span style="display:inline-block; width: 12px; height: 12px; border: 2px solid var(--accent-green); background: rgba(22, 163, 74, 0.15); border-radius: 2px;"></span> 🟢 Auto / Verified</span>
+        <span style="display: flex; align-items: center; gap: 0.35rem;" title="Tag added manually for specific disclosure or note"><span style="display:inline-block; width: 12px; height: 12px; border: 2px solid #ca8a04; background: rgba(234, 179, 8, 0.2); border-radius: 2px;"></span> 🟡 Manual</span>
+        <span style="display: flex; align-items: center; gap: 0.35rem;" title="Tag value or context modified from default"><span style="display:inline-block; width: 12px; height: 12px; border: 2px solid #ea580c; background: rgba(249, 115, 22, 0.2); border-radius: 2px;"></span> 🟠 Modified</span>
+        <span style="display: flex; align-items: center; gap: 0.35rem;"><span style="display:inline-block; width: 12px; height: 12px; border: 2px solid var(--accent-blue); background: rgba(37, 99, 235, 0.15); border-radius: 2px;"></span> 🔵 Selected</span>
+        <span style="display: flex; align-items: center; gap: 0.35rem;"><span style="display:inline-block; width: 12px; height: 12px; border: 1px solid #cbd5e1; background: white; border-radius: 2px;"></span> ⚪ Untagged</span>
       </div>
       <div id="documentViewer" class="doc-container">
         <div class="empty-state" style="margin-top: 120px; text-align: center;">
