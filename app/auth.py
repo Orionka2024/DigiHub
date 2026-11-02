@@ -430,6 +430,9 @@ def get_current_user(request: Request):
         username: str = payload.get("sub")
         if not username:
             raise credentials_exception
+        allowed = get_allowed_users()
+        if username.lower() not in allowed:
+            raise credentials_exception
         return username.lower()
     except jwt.PyJWTError:
         raise credentials_exception

@@ -227,6 +227,33 @@ from queue import Queue
 _ep_queue = Queue()
 
 
+import time
+import threading
+_ep_lock = threading.Lock()
+
+
+def _ensure_entry_point_loaded(release, key: str, wait_seconds: float = 6.0) -> str:
+    status_key = f"{release.id}:{key}"
+    status = _ep_loading_status.get(status_key)
+    if status in {"done", "incomplete", "error"}:
+        return status
+    if not getattr(release, "package_path", None):
+        return "done"
+    _schedule_entry_point(release, key)
+    t0 = time.time()
+    while _ep_loading_status.get(status_key) in {"queued", "loading"} and (time.time() - t0 < wait_seconds):
+        time.sleep(0.05)
+    status = _ep_loading_status.get(status_key)
+    if status in {"done", "incomplete", "error"}:
+        return status
+    with _ep_lock:
+        status = _ep_loading_status.get(status_key)
+        if status not in {"done", "incomplete", "error"}:
+            _parse_release_ep(release, key)
+            status = _ep_loading_status.get(status_key, "error")
+    return status
+
+
 def _schedule_entry_point(release, key):
     status_key = f"{release.id}:{key}"
     status = _ep_loading_status.get(status_key)
@@ -238,7 +265,6 @@ def _schedule_entry_point(release, key):
 
 
 def _load_remaining_entry_points() -> None:
-    import threading
     def load():
         while True:
             release, key = _ep_queue.get()
@@ -393,10 +419,10 @@ async def get_concepts(taxonomy_id: str, entry_point_key: str = "") -> dict:
         if entry_point_key:
             if entry_point_key not in rel.entry_points:
                 raise ValueError("Unknown entry point.")
-            _schedule_entry_point(rel, entry_point_key)
-            if _ep_loading_status.get(f"{taxonomy_id}:{entry_point_key}") == "error":
+            status = _ensure_entry_point_loaded(rel, entry_point_key)
+            if status == "error":
                 raise HTTPException(status_code=422, detail="Entry point failed to load. See /health for details.")
-            if _ep_loading_status.get(f"{taxonomy_id}:{entry_point_key}") in {"pending", "queued", "loading"}:
+            if status not in {"done", "incomplete"}:
                 raise HTTPException(status_code=503, detail="Entry point is loading or unavailable. See /health.")
             concepts = rel.get_concepts_for_ep(entry_point_key, exclude_abstract=False)
         else:
@@ -459,10 +485,10 @@ async def get_checklist(taxonomy_id: str, entry_point_key: str, filing_id: str =
         
         if entry_point_key not in rel.entry_points:
             raise ValueError("Unknown entry point.")
-        _schedule_entry_point(rel, entry_point_key)
-        if _ep_loading_status.get(f"{taxonomy_id}:{entry_point_key}") == "error":
+        status = _ensure_entry_point_loaded(rel, entry_point_key)
+        if status == "error":
             raise HTTPException(status_code=422, detail="Entry point failed to load. See /health for details.")
-        if _ep_loading_status.get(f"{taxonomy_id}:{entry_point_key}") in {"pending", "queued", "loading"}:
+        if status not in {"done", "incomplete"}:
             raise HTTPException(status_code=503, detail="Entry point is not available yet; inspect /health for loading errors.")
         sections = rel.build_checklist(entry_point_key, snapshot=snap)
         out = []
@@ -688,8 +714,8 @@ async def auto_tag_table(filing_id: str, payload: AutoTagRequest) -> AutoTagResp
         
     # Using EnrichedTaxonomyRelease
     if hasattr(taxonomy, "rules_engine"):
-        _schedule_entry_point(taxonomy, snap.entry_point_key)
-        if _ep_loading_status.get(f"{taxonomy.id}:{snap.entry_point_key}") in {"pending", "queued", "loading", "error"}:
+        status = _ensure_entry_point_loaded(taxonomy, snap.entry_point_key)
+        if status not in {"done", "incomplete"}:
             raise HTTPException(status_code=503, detail="Selected taxonomy concepts are not available yet.")
         concepts = taxonomy.get_concepts_for_ep(snap.entry_point_key)
         # We only care about monetary/numeric concepts

@@ -402,11 +402,16 @@ class WorkspaceStore:
         self._write("filing",snapshot.filing_id,_snapshot_to_dict(snapshot),create=True)
 
     def get(self, filing_id):
-        if filing_id in self._snapshots:
-            return self._snapshots[filing_id]
-        snap = _snapshot_from_dict(self._read("filing",filing_id))
-        self._snapshots[filing_id] = snap
-        return snap
+        try:
+            snap = _snapshot_from_dict(self._read("filing", filing_id))
+            self._snapshots[filing_id] = snap
+            return snap
+        except (KeyError, PermissionError, StorageConflict, StorageUnavailable):
+            raise
+        except Exception:
+            if filing_id in self._snapshots:
+                return self._snapshots[filing_id]
+            raise
 
     def update(self, snapshot):
         previous = self._rows("filing", snapshot.filing_id)
@@ -435,12 +440,12 @@ class WorkspaceStore:
                 raise
 
     def get_document(self, document_sha256):
-        if document_sha256 in self._documents:
-            return self._documents[document_sha256]
         try:
             doc = _document_from_dict(self._read("document", document_sha256))
             self._documents[document_sha256] = doc
             return doc
+        except (PermissionError, StorageConflict, StorageUnavailable):
+            raise
         except KeyError:
             if not self.local_dir:
                 try:

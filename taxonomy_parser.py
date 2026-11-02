@@ -75,9 +75,11 @@ class CatalogResolver:
 
     def __init__(self, catalog_path: Path | None) -> None:
         self.rules: list[tuple[str, str]] = []   # (uriStartString, rewritePrefix)
-        self.base_dir: Path | None = catalog_path.parent if catalog_path else None
+        self.base_dir: Path | None = catalog_path.parent.resolve() if catalog_path else None
+        self._cache: dict[str, Path | None] = {}
         if catalog_path and catalog_path.exists():
             self._parse(catalog_path)
+            self.rules.sort(key=lambda item: len(item[0]), reverse=True)
 
     def _parse(self, path: Path) -> None:
         try:
@@ -94,12 +96,17 @@ class CatalogResolver:
     def resolve(self, uri: str) -> Path | None:
         if not (uri.startswith("http://") or uri.startswith("https://")):
             return None
-        for start_str, prefix in sorted(self.rules, key=lambda item: len(item[0]), reverse=True):
+        if uri in self._cache:
+            return self._cache[uri]
+        result: Path | None = None
+        for start_str, prefix in self.rules:
             if uri.startswith(start_str):
                 rel = uri.replace(start_str, prefix, 1)
                 if self.base_dir:
-                    return (self.base_dir / rel).resolve()
-        return None
+                    result = (self.base_dir / rel).resolve()
+                break
+        self._cache[uri] = result
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +131,7 @@ class TaxonomyParser:
         self.catalog_path = catalog_path
         self._concept_locations = {}
         self.catalog = CatalogResolver(catalog_path)
+        self._resolve_cache: dict[tuple[str, Path], Path | None] = {}
         # qname → ConceptMetadata (accumulated across all entry-point files)
         self.concepts: dict[str, ConceptMetadata] = {}
         # Namespace URI → prefix (built during XSD parsing)
@@ -191,6 +199,8 @@ class TaxonomyParser:
     # ------------------------------------------------------------------
 
     def _parse_file(self, filepath: Path | None) -> None:
+        if filepath is not None and str(filepath) in self._visited:
+            return
         if not filepath or not filepath.is_file():
             message = f"Unresolved taxonomy dependency: {filepath}"
             if self.strict:
@@ -199,12 +209,10 @@ class TaxonomyParser:
                 self.errors.append(message)
             return
         key = str(filepath)
-        if key in self._visited:
-            return
         self._visited.add(key)
 
         try:
-            tree = ET.parse(str(filepath), ET.XMLParser(resolve_entities=False, no_network=True, remove_comments=True))
+            tree = ET.parse(key, ET.XMLParser(resolve_entities=False, no_network=True, remove_comments=True))
             root = tree.getroot()
         except Exception as exc:
             message = f"Cannot parse taxonomy file {filepath}: {exc}"
@@ -235,7 +243,14 @@ class TaxonomyParser:
             return resolved
         # Relative path
         url, _ = urllib.parse.urldefrag(href)
-        return (current.parent / url).resolve() if url else None
+        if not url:
+            return None
+        cache_key = (url, current.parent)
+        if cache_key in self._resolve_cache:
+            return self._resolve_cache[cache_key]
+        resolved = (current.parent / url).resolve()
+        self._resolve_cache[cache_key] = resolved
+        return resolved
 
     # ------------------------------------------------------------------
     # XSD schema parsing
@@ -245,6 +260,7 @@ class TaxonomyParser:
         target_ns = root.get("targetNamespace", "")
 
         prefix = self._prefix_for(target_ns, root)
+        resolved_filepath_str = str(filepath.resolve())
 
         # Extract concept elements
         for el in root.iter("{http://www.w3.org/2001/XMLSchema}element"):
@@ -257,7 +273,7 @@ class TaxonomyParser:
                 continue
 
             qname = f"{prefix}:{name}"
-            self._concept_locations[f"{filepath.resolve()}#{el.get('id', name)}"] = qname
+            self._concept_locations[f"{resolved_filepath_str}#{el.get('id', name)}"] = qname
             if qname not in self.concepts:
                 self.concepts[qname] = ConceptMetadata(
                     qname=qname,
@@ -304,24 +320,14 @@ class TaxonomyParser:
                 # Only parse local NT taxonomy schemas (skip XBRL core schemas)
                 if schema_uri.startswith("http://") or schema_uri.startswith("https://"):
                     resolved = self.catalog.resolve(schema_uri)
-                    if resolved and resolved.exists() and resolved.suffix == ".xsd":
-                        self._parse_file(resolved)
                 else:
                     resolved = self._resolve(schema_uri, filepath)
-                    if resolved and resolved.exists() and resolved.suffix == ".xsd":
-                        self._parse_file(resolved)
+                if resolved and resolved.suffix == ".xsd" and (str(resolved) in self._visited or resolved.exists()):
+                    self._parse_file(resolved)
 
-        # First pass: build loc map (label → resolved qname)
+        # First pass: build loc map (label → resolved qname) and normalize locator hrefs
         self._loc_map = {}
         self._build_loc_map(root, filepath)
-        # Locators carry file-qualified IDs, not globally unique fragments.
-        for loc in root.iter("{http://www.xbrl.org/2003/linkbase}loc"):
-            href = loc.get("{http://www.w3.org/1999/xlink}href", "")
-            if "#" in href:
-                url, fragment = href.rsplit("#", 1)
-                resolved = self._resolve(url, filepath) if url else filepath
-                if resolved:
-                    loc.set("{http://www.w3.org/1999/xlink}href", f"{resolved.resolve()}#{fragment}")
 
         # Route by child element types present
         tags_present = {el.tag for el in root.iter()}
@@ -350,17 +356,28 @@ class TaxonomyParser:
     def _build_loc_map(self, root: ET.Element, filepath: Path) -> None:
         """Map xlink:label attributes to qnames by resolving href anchors."""
         loc_map = {}
+        url_cache: dict[str, tuple[Path | None, str]] = {}
+        resolved_filepath_str = str(filepath)
         for loc in root.iter("{http://www.xbrl.org/2003/linkbase}loc"):
             href = loc.get("{http://www.w3.org/1999/xlink}href", "")
             label = loc.get("{http://www.w3.org/1999/xlink}label", "")
             if "#" in href:
                 url, fragment = href.rsplit("#", 1)
-                resolved = self._resolve(url, filepath) if url else filepath
-                # The fragment is the element id; we'll look it up by name
-                if resolved:
-                    loc_map[label] = f"{resolved.resolve()}#{fragment}"
-                    if resolved.suffix == ".xsd":
+                if not url:
+                    resolved = filepath
+                    resolved_str = resolved_filepath_str
+                elif url in url_cache:
+                    resolved, resolved_str = url_cache[url]
+                else:
+                    resolved = self._resolve(url, filepath)
+                    resolved_str = str(resolved) if resolved else ""
+                    url_cache[url] = (resolved, resolved_str)
+                    if resolved and resolved.suffix == ".xsd" and resolved_str not in self._visited:
                         self._parse_file(resolved)
+                if resolved_str:
+                    full_ref = f"{resolved_str}#{fragment}"
+                    loc_map[label] = full_ref
+                    loc.set("{http://www.w3.org/1999/xlink}href", full_ref)
 
         self._loc_map = loc_map
 

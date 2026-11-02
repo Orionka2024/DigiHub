@@ -1457,12 +1457,35 @@ window.workspace = {
     this._suggesting = true;
     const filingId = this.state.filingId;
     try {
+      const tables = this.state.document.nodes.filter(n => n.kind === 'table');
+      if (!tables.length) {
+        this.setNavStatus('No tables found in this document to suggest tags for.', 'warning');
+        return;
+      }
       const suggestions = [];
-      for (const node of this.state.document.nodes.filter(n => n.kind === 'table')) {
-        this.setNavStatus(`Finding suggestions… ${suggestions.length} found`, 'loading');
-        const res = await fetch(`${this.BASE_URL}/api/snapshot/${filingId}/auto-tag-table`, {
-          method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({source_node_id: node.id})});
-        if (!res.ok) throw new Error('Suggestions unavailable. Check that the selected taxonomy has loaded.');
+      for (const node of tables) {
+        let attempts = 0;
+        let res;
+        while (attempts < 15) {
+          if (this.state.filingId !== filingId) return;
+          this.setNavStatus(`Finding suggestions… (${suggestions.length} found so far)`, 'loading');
+          res = await fetch(`${this.BASE_URL}/api/snapshot/${filingId}/auto-tag-table`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({source_node_id: node.id})});
+          if (res.status === 503) {
+            attempts++;
+            this.setNavStatus(`Taxonomy is still loading in the background. Waiting for concepts… (attempt ${attempts}/15)`, 'loading');
+            await new Promise(r => setTimeout(r, 4000));
+            continue;
+          }
+          break;
+        }
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          if (res.status === 503) {
+            throw new Error('Taxonomy is still loading. Please wait a moment until the checklist appears in the sidebar and try again.');
+          }
+          throw new Error(err?.detail || 'Suggestions unavailable. Check that the selected taxonomy has loaded.');
+        }
         suggestions.push(...(await res.json()).recommendations);
       }
       if (this.state.filingId !== filingId) return;
@@ -1484,7 +1507,14 @@ window.workspace = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source_node_id: tableNodeId })
       });
-      if (!res.ok) throw new Error('Auto-tagging failed');
+      if (res.status === 503) {
+        this.setNavStatus('Taxonomy concepts are still loading. Please wait until the checklist appears and try again.', 'warning');
+        return;
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.detail || 'Auto-tagging failed');
+      }
       const data = await res.json();
       
       const recs = data.recommendations;

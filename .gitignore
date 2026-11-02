@@ -40,3 +40,4 @@ NT21_*
 
 # Verified extracted taxonomy cache (recreated from the bundled archive)
 app/data/taxonomies/.extracted/
+data/
