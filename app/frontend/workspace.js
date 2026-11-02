@@ -398,7 +398,7 @@ window.workspace = {
     if (!document.getElementById('entryPointInput').value) { alert('Choose the company size and reporting profile first.'); return; }
     if (this.state.filingId) {
       const fields = [['kvkInput','kvkNumber'],['entityNameInput','entityName'],['periodStartInput','periodStart'],['periodEndInput','periodEnd'],['taxonomyIdInput','taxonomyId'],['entryPointInput','entryPointKey']];
-      if (fields.some(([id,key]) => document.getElementById(id).value.trim() !== this.state[key])) {
+      if (fields.some(([id,key]) => Boolean(this.state[key]) && document.getElementById(id).value.trim() !== this.state[key])) {
         alert('Entity, period and taxonomy are bound to this filing. Start a new filing to use different settings.');
         return;
       }

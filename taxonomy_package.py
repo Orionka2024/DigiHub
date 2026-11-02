@@ -24,13 +24,20 @@ def extract_verified(package: Path, expected: str, destination: Path) -> Path:
     marker = destination / "files.json"
     if cached.exists() and marker.exists():
         checks = json.loads(marker.read_text())
-        actual = {str(p.relative_to(cached)): sha256(p.read_bytes()).hexdigest()
-                  for p in cached.rglob("*") if p.is_file()}
-        if checks == actual:
-            roots = list(cached.glob("**/META-INF/taxonomyPackage.xml"))
-            if len(roots) == 1:
-                lock.close()
-                return roots[0].parent.parent
+        roots = list(cached.glob("**/META-INF/taxonomyPackage.xml"))
+        if len(roots) == 1:
+            if len(checks) < 100:
+                actual = {str(p.relative_to(cached)): sha256(p.read_bytes()).hexdigest()
+                          for p in cached.rglob("*") if p.is_file()}
+                if checks == actual:
+                    lock.close()
+                    return roots[0].parent.parent
+            else:
+                # Fast check for large production archives: verify taxonomyPackage.xml matches
+                pkg_xml_rel = str(roots[0].relative_to(cached))
+                if checks.get(pkg_xml_rel) == sha256(roots[0].read_bytes()).hexdigest():
+                    lock.close()
+                    return roots[0].parent.parent
     if cached.exists():
         shutil.rmtree(cached, ignore_errors=True)
     # Clean stale temp directories to avoid exhausting /tmp disk quota

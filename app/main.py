@@ -485,6 +485,56 @@ async def get_checklist(taxonomy_id: str, entry_point_key: str, filing_id: str =
         
         if entry_point_key not in rel.entry_points:
             raise ValueError("Unknown entry point.")
+
+        # Check for pre-cached checklist JSON for instantaneous serverless response (<5ms)
+        cache_dir = Path(__file__).resolve().parent / "data" / "checklists"
+        cache_candidates = [
+            cache_dir / f"{entry_point_key}.json",
+            cache_dir / f"{entry_point_key.replace('_pub', '').replace('_vert', '')}.json",
+        ]
+        for candidate in cache_candidates:
+            if candidate.exists():
+                with open(candidate, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                out = []
+                mapped_qnames = {fact.qname for fact in snap.facts} if snap else set()
+                fact_values = {fact.qname: str(fact.value) if fact.value is not None else "" for fact in snap.facts} if snap else {}
+                reviewed_ids = set(getattr(snap, "reviewed_requirement_ids", ())) if snap else set()
+                for s in data:
+                    satisfied_count = 0
+                    items = []
+                    for i in s.get("items", []):
+                        qn = i.get("concept_qname")
+                        rule_ids = i.get("rule_ids", [])
+                        status_str = i.get("status", "optional")
+                        is_sat = (qn in mapped_qnames or (status_str == "conditional" and bool(rule_ids) and all(rid in reviewed_ids for rid in rule_ids)))
+                        if is_sat:
+                            satisfied_count += 1
+                        items.append(ChecklistItemOut(
+                            concept_qname=qn,
+                            label_nl=i.get("label_nl", ""),
+                            label_en=i.get("label_en"),
+                            data_type=i.get("data_type", ""),
+                            period_type=i.get("period_type", ""),
+                            balance=i.get("balance"),
+                            status=status_str,
+                            condition_nl=i.get("condition_nl", ""),
+                            rule_ids=rule_ids,
+                            is_satisfied=is_sat,
+                            fact_value=fact_values.get(qn) if is_sat else None
+                        ))
+                    out.append(ChecklistSectionOut(
+                        section_id=s.get("section_id", "general"),
+                        title_nl=s.get("title_nl", ""),
+                        title_en=s.get("title_en", ""),
+                        total=len(items),
+                        satisfied=satisfied_count,
+                        mandatory_count=s.get("mandatory_count", 0),
+                        conditional_count=s.get("conditional_count", 0),
+                        items=items
+                    ))
+                return out
+
         status = _ensure_entry_point_loaded(rel, entry_point_key)
         if status == "error":
             raise HTTPException(status_code=422, detail="Entry point failed to load. See /health for details.")

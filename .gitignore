@@ -36,8 +36,9 @@ NT21_*
 # But allow compiled taxonomy assets needed by the app
 !app/data/taxonomies/*.json
 !app/data/taxonomies/*.zip
+!app/data/checklists/*.json
 !taxonomy/
 
 # Verified extracted taxonomy cache (recreated from the bundled archive)
 app/data/taxonomies/.extracted/
-data/
+/data/
