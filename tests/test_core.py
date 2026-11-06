@@ -34,7 +34,7 @@ class FilingCoreTests(unittest.TestCase):
             taxonomy_id="TEST_KVK_2026", entry_point_key="groot", document_sha256=digest,
             contexts=[Context("duration", "http://www.kvk.nl/kvk-id", "34254022", start_date=date(2026, 1, 1), end_date=date(2026, 12, 31))],
             units=[Unit("USD", "iso4217:USD")],
-            facts=[Fact("revenue", "kvk:Revenue", "duration", Decimal("125400000"), "numeric", SourceRef(digest, "Table 4, row 5", "125,400", reviewer="Test Accountant"), "USD", -3)],
+            facts=[Fact("revenue", "kvk:Revenue", "duration", Decimal("125400000"), "numeric", SourceRef(digest, "Table 4, row 5", "125,400", reviewer="Test Accountant"), "USD", -3, scale=3)],
             report_sections={"balance sheet", "accountant report"},
             reviewed_requirement_ids={"accountant-report"},
         )

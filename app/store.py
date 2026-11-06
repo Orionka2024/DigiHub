@@ -55,6 +55,12 @@ def _restore_value(kind, value):
 
 def _snapshot_to_dict(s: FilingSnapshot) -> dict:
     return {
+        "profile_id": s.profile_id,
+        "taxonomy_version": s.taxonomy_version,
+        "taxonomy_sha256": s.taxonomy_sha256,
+        "dependency_checksums": s.dependency_checksums,
+        "rules_version": s.rules_version,
+        "warning_dispositions": s.warning_dispositions,
         "filing_id": s.filing_id,
         "entity_name": s.entity_name,
         "kvk_number": s.kvk_number,
@@ -79,12 +85,14 @@ def _snapshot_to_dict(s: FilingSnapshot) -> dict:
                          else f.value.isoformat() if type(f.value) is date
                          else f.value,
                 "kind": f.kind, "nil": f.nil,
+                "scale": f.scale, "sign": f.sign, "number_format": f.number_format,
                 "unit_id": f.unit_id, "decimals": f.decimals,
                 "source": {
                     "document_sha256": f.source.document_sha256,
                     "location": f.source.location,
                     "extracted_value": f.source.extracted_value,
                     "reviewer": f.source.reviewer,
+                    "reviewed_at": f.source.reviewed_at,
                 },
             }
             for f in s.facts
@@ -110,12 +118,14 @@ def _snapshot_from_dict(data: dict) -> FilingSnapshot:
             id=f["id"], qname=f["qname"], context_id=f["context_id"],
             value=_restore_value(f["kind"], f["value"]),
             kind=f["kind"], nil=f["nil"],
+            scale=f.get("scale", 0), sign=f.get("sign"), number_format=f.get("number_format", "en"),
             unit_id=f["unit_id"], decimals=f["decimals"],
             source=SourceRef(
                 document_sha256=f["source"]["document_sha256"],
                 location=f["source"]["location"],
                 extracted_value=f["source"]["extracted_value"],
                 reviewer=f["source"]["reviewer"],
+                reviewed_at=f["source"].get("reviewed_at"),
             ),
         )
         for f in data["facts"]
@@ -133,6 +143,12 @@ def _snapshot_from_dict(data: dict) -> FilingSnapshot:
     ]
     units = [Unit(id=u["id"], measure=u["measure"]) for u in data["units"]]
     snap = FilingSnapshot(
+        profile_id=data.get("profile_id"),
+        taxonomy_version=data.get("taxonomy_version", ""),
+        taxonomy_sha256=data.get("taxonomy_sha256", ""),
+        dependency_checksums=data.get("dependency_checksums", {}),
+        rules_version=data.get("rules_version", ""),
+        warning_dispositions=data.get("warning_dispositions", []),
         filing_id=data["filing_id"],
         entity_name=data["entity_name"],
         kvk_number=data["kvk_number"],
@@ -155,9 +171,12 @@ def _snapshot_from_dict(data: dict) -> FilingSnapshot:
         approval_date=date.fromisoformat(data["approval_date"]) if data.get("approval_date") else None,
     )
     if snap.state in (FilingState.FROZEN, FilingState.VALIDATED):
-        if not snap.frozen_digest:
+        if not snap.frozen_digest or "taxonomy_version" not in data:
             snap.state = FilingState.DRAFT
-            snap.frozen_at = snap.validation_digest = None
+            snap.frozen_at = snap.validation_digest = snap.frozen_digest = None
+            snap.is_final = False
+            snap.signatory_name = snap.approval_date = None
+            snap.warning_dispositions = []
         else:
             snap.verify_frozen()
     return snap
@@ -475,7 +494,56 @@ class WorkspaceStore:
         return _snapshot_from_dict(body)
 
     def list_filings(self):
-        return [{k:body[k] for k in ("filing_id","entity_name","kvk_number","period_start","period_end","state")} for _,body,_ in self._rows("filing")]
+        result = []
+        for _, body, _ in self._rows("filing"):
+            item = {k: body.get(k) for k in ("filing_id", "entity_name", "kvk_number", "period_start", "period_end", "state")}
+            item["profile_id"] = body.get("profile_id")
+            item["taxonomy_id"] = body.get("taxonomy_id")
+            item["fact_count"] = len(body.get("facts", []))
+            item["year"] = int(body["period_end"][:4]) if body.get("period_end") else None
+            item["is_final"] = body.get("is_final", False)
+            result.append(item)
+        return result
+
+    def list_companies(self):
+        from collections import defaultdict
+        companies = defaultdict(lambda: {"filings": []})
+        for _, body, _ in self._rows("filing"):
+            kvk = body.get("kvk_number", "")
+            if not kvk:
+                continue
+            entity_name = body.get("entity_name", "")
+            year = int(body["period_end"][:4]) if body.get("period_end") else None
+            filing_info = {
+                "filing_id": body.get("filing_id"),
+                "period_start": body.get("period_start"),
+                "period_end": body.get("period_end"),
+                "year": year,
+                "state": body.get("state"),
+                "profile_id": body.get("profile_id"),
+                "taxonomy_id": body.get("taxonomy_id"),
+                "fact_count": len(body.get("facts", [])),
+                "is_final": body.get("is_final", False),
+            }
+            c = companies[kvk]
+            c["kvk_number"] = kvk
+            if not c.get("entity_name") or (year and year >= (c.get("latest_year") or 0)):
+                c["entity_name"] = entity_name
+                c["latest_year"] = year
+            c["filings"].append(filing_info)
+
+        result = []
+        for kvk, data in companies.items():
+            data["filings"].sort(key=lambda f: (f.get("period_end") or "", f.get("filing_id") or ""), reverse=True)
+            latest = data["filings"][0] if data["filings"] else {}
+            data["latest_filing_id"] = latest.get("filing_id")
+            data["latest_year"] = latest.get("year")
+            data["latest_state"] = latest.get("state")
+            data["latest_profile_id"] = latest.get("profile_id")
+            data["total_filings"] = len(data["filings"])
+            result.append(data)
+        result.sort(key=lambda c: (c.get("entity_name") or "").lower())
+        return result
 
 
 store = WorkspaceStore()

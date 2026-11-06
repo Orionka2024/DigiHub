@@ -11,7 +11,7 @@ Key design principles:
       - Currency unit: ISO 4217 (EUR)
   * Numeric facts use ix:nonFraction with decimals and optional scale/sign.
   * Text facts use ix:nonNumeric.
-  * Dimensional contexts use xbrldi:explicitMember inside xbrli:segment.
+  * Dimensional contexts use xbrldi:explicitMember inside xbrli:scenario.
   * The ix:header block contains all contexts and units; facts appear inline
     in the document body.
   * Hidden facts (those not tied to visible document text) go in ix:hidden.
@@ -47,6 +47,7 @@ _DEFAULT_NS: dict[str, str] = {
     "link":   _LINK_NS,
     "xlink":  _XLINK_NS,
     "iso4217": _ISO4217_NS,
+    "ixt": "http://www.xbrl.org/inlineXBRL/transformation/2020-02-12",
 }
 
 
@@ -148,8 +149,6 @@ class _IXBRLBuilder:
         header = self._build_ix_header()
 
         doc = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
-  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="{_XHTML_NS}"
       {all_ns}
       xml:lang="nl">
@@ -211,8 +210,7 @@ class _IXBRLBuilder:
         # Entity
         entity = f"""        <xbrli:entity>
           <xbrli:identifier scheme="{_xml_escape(ctx.entity_scheme)}">{
-          _xml_escape(ctx.entity_identifier)}</xbrli:identifier>{
-          self._render_segment(ctx)}
+          _xml_escape(ctx.entity_identifier)}</xbrli:identifier>
         </xbrli:entity>"""
 
         # Period
@@ -228,7 +226,7 @@ class _IXBRLBuilder:
 
         return f"""      <xbrli:context id="{_xml_escape(ctx.id)}">
 {entity}
-{period}
+{period}{self._render_segment(ctx)}
       </xbrli:context>"""
 
     def _render_segment(self, ctx: Context) -> str:
@@ -240,9 +238,9 @@ class _IXBRLBuilder:
             for d in ctx.dimensions
         )
         return f"""
-          <xbrli:segment>
+          <xbrli:scenario>
 {dims}
-          </xbrli:segment>"""
+          </xbrli:scenario>"""
 
     def _render_unit(self, unit: Unit) -> str:
         if ":" in unit.measure:
@@ -293,26 +291,9 @@ class _IXBRLBuilder:
         unit_ref = f'unitRef="{_xml_escape(fact.unit_id or "")}"'
         decimals = f'decimals="{fact.decimals}"'
         value = fact.value
-        sign = ""
-        scale = ""
-
-        if isinstance(value, Decimal):
-            # Detect sign override for negative monetary values displayed positively
-            if value < 0:
-                sign = ' sign="-"'
-                value = abs(value)
-            # Scale: if value is a whole number of thousands, use scale=3
-            if value == value.to_integral_value() and abs(value) >= 1000:
-                int_val = int(value)
-                if int_val % 1000 == 0:
-                    scale = ' scale="3"'
-                    display_val = int_val // 1000
-                else:
-                    display_val = int_val
-            else:
-                display_val = value
-        else:
-            display_val = str(value) if value is not None else "0"
+        sign = ' sign="-"' if value < 0 else ""
+        scale = f' scale="{fact.scale}"'
+        display_val = format(abs(value).scaleb(-fact.scale), 'f')
 
         return (
             f'{indent}<ix:nonFraction name="{_xml_escape(fact.qname)}" '
@@ -340,36 +321,67 @@ class _IXBRLBuilder:
     # Body (visible facts in context)
     # ----------------------------------------------------------------
 
+    def _render_source(self, location, text):
+        facts = [f for f in self._visible_facts if f.source.location == location]
+        if not facts:
+            return _xml_escape(text)
+        if len(facts) != 1:
+            raise ValueError("INLINE_OVERLAP: Multiple mappings at one source location need explicit span support.")
+        fact = facts[0]
+        if fact.source.extracted_value != text or fact.nil:
+            raise ValueError("INLINE_SOURCE: Source text changed or nil rendering is unsupported.")
+        if fact.kind != "numeric":
+            canonical = (fact.value.isoformat() if isinstance(fact.value, date) else
+                         "true" if fact.value is True else "false" if fact.value is False else str(fact.value))
+            if canonical != text:
+                raise ValueError("INLINE_VALUE: Text/date/boolean requires exact source representation.")
+            return self._render_fact(fact).strip()
+        from autotagger import parse_number
+        parsed = parse_number(text.strip(), fact.number_format)
+        if abs(parsed).scaleb(fact.scale) != abs(fact.value):
+            raise ValueError("INLINE_VALUE: Source amount and reviewed value/scale disagree.")
+        if (parsed < 0) != (fact.value < 0) and fact.sign != "-":
+            raise ValueError("INLINE_SIGN: Sign inversion requires explicit review.")
+        # Preserve punctuation/signs outside the numeric transform. Do not alter
+        # surrounding source text or invent a displayed amount.
+        import re
+        match = re.fullmatch(r"(\s*(?:-\s*|\(\s*)?)([0-9][0-9., ]*)(\s*\)?\s*)", text)
+        if not match:
+            raise ValueError("INLINE_FORMAT: Unsupported source numeric representation.")
+        prefix, digits, suffix = match.groups()
+        fmt = "num-comma-decimal" if fact.number_format == "nl" else "num-dot-decimal"
+        sign = ' sign="-"' if fact.value < 0 else ""
+        return (_xml_escape(prefix) + f'<ix:nonFraction id="{_xml_escape(fact.id)}" '
+                f'name="{_xml_escape(fact.qname)}" contextRef="{_xml_escape(fact.context_id)}" '
+                f'unitRef="{_xml_escape(fact.unit_id)}" decimals="{fact.decimals}" '
+                f'scale="{fact.scale}" format="ixt:{fmt}"{sign}>' +
+                _xml_escape(digits) + '</ix:nonFraction>' + _xml_escape(suffix))
+
     def _build_body(self) -> str:
-        period = (
-            f"{self.snap.period_start.year}–{self.snap.period_end.year}"
-            if self.snap.period_start.year != self.snap.period_end.year
-            else str(self.snap.period_end.year)
-        )
-        entity = _xml_escape(self.snap.entity_name)
-        kvk = _xml_escape(self.snap.kvk_number)
         content = []
         if self.document:
+            locations = set()
             for text in self.document.headers:
                 content.append(f"<p>{_xml_escape(text)}</p>")
             for node in self.document.nodes:
                 if node.kind == "paragraph":
-                    content.append(f"<p>{_xml_escape(node.text)}</p>")
+                    locations.add(node.location)
+                    content.append("<p>" + self._render_source(node.location, node.text) + "</p>")
                 else:
-                    rows = ["<tr>" + "".join(f"<td>{_xml_escape(cell)}</td>" for cell in row) + "</tr>" for row in node.rows]
+                    rows = []
+                    for r, row in enumerate(node.rows, 1):
+                        cells = []
+                        for c, cell in enumerate(row, 1):
+                            location = f"{node.location}, Row {r}, Col {c}"
+                            locations.add(location)
+                            cells.append("<td>" + self._render_source(location, cell) + "</td>")
+                        rows.append("<tr>" + "".join(cells) + "</tr>")
                     content.append("<table>" + "".join(rows) + "</table>")
+            if any(f.source.location not in locations for f in self._visible_facts):
+                raise ValueError("INLINE_SOURCE: A mapped source location is missing.")
             for text in self.document.footers:
                 content.append(f"<p>{_xml_escape(text)}</p>")
-            content.append("<h2>Reviewed facts</h2><table><tbody>")
-            for fact in self._visible_facts:
-                content.append("<tr><td>" + _xml_escape(fact.qname) + "</td><td>" +
-                               _xml_escape(fact.context_id) + "</td><td>" +
-                               self._render_fact(fact) + "</td><td>" +
-                               _xml_escape(fact.source.location) + "</td></tr>")
-            content.append("</tbody></table>")
-        return (f'<div id="document-body"><h1>{entity} — {_xml_escape(self.report_title)} {period}</h1>'
-                f'<p>KVK-nummer: {kvk} | Boekjaar: {self.snap.period_start} t/m {self.snap.period_end}</p>'
-                + "\n".join(content) + "</div>")
+        return '<div id="document-body">' + "\n".join(content) + '</div>'
 
 
 

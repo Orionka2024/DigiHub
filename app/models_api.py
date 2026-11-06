@@ -142,6 +142,7 @@ class ExtractedDocumentOut(BaseModel):
 # ── Snapshot creation ──────────────────────────────────────────────────────────
 
 class SnapshotCreateIn(BaseModel):
+    profile_id: str | None = None
     entity_name: str
     kvk_number: str
     period_start: date
@@ -152,6 +153,12 @@ class SnapshotCreateIn(BaseModel):
 
 
 class SnapshotOut(BaseModel):
+    profile_id: str | None = None
+    taxonomy_version: str = ""
+    taxonomy_sha256: str = ""
+    dependency_checksums: dict[str, str] = Field(default_factory=dict)
+    rules_version: str = ""
+    warning_dispositions: list[dict] = Field(default_factory=list)
     filing_id: str
     entity_name: str
     kvk_number: str
@@ -184,6 +191,9 @@ class FreezeIn(BaseModel):
 # ── Mapping ────────────────────────────────────────────────────────────────────
 
 class MappingDecisionIn(BaseModel):
+    scale: int = Field(default=0, ge=-12, le=12)
+    sign: Literal["-"] | None = None
+    number_format: Literal["nl", "en"] = "en"
     source_node_id: str
     source_location: str
     qname: str
@@ -238,6 +248,11 @@ class ReviewRequirementIn(BaseModel):
     requirement_id: str
 
 
+class WarningDispositionIn(BaseModel):
+    issue_id: str
+    reason: str = Field(min_length=10, max_length=4000)
+
+
 # ── Auto-Tagger ────────────────────────────────────────────────────────────────
 
 class AutoTagRequest(BaseModel):
@@ -268,6 +283,8 @@ class AutoTagResponse(BaseModel):
 # ── Validation ─────────────────────────────────────────────────────────────────
 
 class ValidationIssueOut(BaseModel):
+    issue_id: str | None = None
+    disposition_current: bool = False
     code: str
     message: str
     severity: str = "error"
@@ -301,3 +318,38 @@ class WorkspaceOut(BaseModel):
     kvk_number: str
     filing_id: str
     saved_at: str
+
+
+# ── Multi-Company & Yearly Rollover ──────────────────────────────────────────
+
+class CompanyFilingOut(BaseModel):
+    filing_id: str
+    period_start: str | None = None
+    period_end: str | None = None
+    year: int | None = None
+    state: str
+    profile_id: str | None = None
+    taxonomy_id: str | None = None
+    fact_count: int = 0
+    is_final: bool = False
+
+
+class CompanySummaryOut(BaseModel):
+    kvk_number: str
+    entity_name: str
+    latest_filing_id: str | None = None
+    latest_year: int | None = None
+    latest_state: str | None = None
+    latest_profile_id: str | None = None
+    total_filings: int = 0
+    filings: list[CompanyFilingOut] = []
+
+
+class CompanyListOut(BaseModel):
+    companies: list[CompanySummaryOut]
+
+
+class RolloverIn(BaseModel):
+    source_filing_id: str
+    target_year: int | None = None
+    carry_over_comparatives: bool = True

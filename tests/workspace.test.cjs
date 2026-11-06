@@ -78,6 +78,91 @@ el('mapQname').value='t:Flag';el('mapKind').value='boolean';el('mapValue').value
   };
   await w.logout();
   assert.equal(loggedOut, true);
-  assert.equal(sandbox.window.location.href, '/login.html');
-  console.log('Workspace regression checks passed: numbers, manual boolean/cell mapping, periods, restore, source reattachment, logout.');
+  // Multi-company entity display and yearly management
+  w.state.entityName = 'MultiCo B.V.';
+  w.state.kvkNumber = '99887766';
+  w.state.periodEnd = '2024-12-31';
+  w.state.filingId = 'f-mc-2024';
+  w.updateEntityDisplay();
+  assert.equal(el('activeCompanyName').textContent, 'MultiCo B.V.');
+  assert.equal(el('activeYearBadge').textContent, 'FY 2024');
+  assert.equal(el('btnRollover').disabled, false);
+
+  // Company Hub rendering and filtering
+  sandbox.fetch = async (url) => {
+    if (url.includes('/api/companies')) {
+      return {
+        ok: true,
+        json: async () => ({
+          companies: [
+            {
+              kvk_number: '99887766',
+              entity_name: 'MultiCo B.V.',
+              total_filings: 1,
+              latest_year: 2024,
+              filings: [{ filing_id: 'f-mc-2024', financial_year: 2024, state: 'draft', fact_count: 5 }]
+            },
+            {
+              kvk_number: '11223344',
+              entity_name: 'OtherClient N.V.',
+              total_filings: 2,
+              latest_year: 2025,
+              filings: [
+                { filing_id: 'f-oc-2025', financial_year: 2025, state: 'frozen', fact_count: 12 },
+                { filing_id: 'f-oc-2024', financial_year: 2024, state: 'validated', fact_count: 10 }
+              ]
+            }
+          ]
+        })
+      };
+    }
+    return { ok: true, json: async () => ({}) };
+  };
+  await w.renderCompanyHub();
+  assert(el('companyListContainer').innerHTML.includes('MultiCo B.V.'));
+  assert(el('companyListContainer').innerHTML.includes('OtherClient N.V.'));
+  assert(el('companyListContainer').innerHTML.includes('FY 2024'));
+  assert(el('companyListContainer').innerHTML.includes('FY 2025'));
+
+  // Filter in Hub
+  w.filterCompanyList('other');
+  assert(!el('companyListContainer').innerHTML.includes('MultiCo B.V.'));
+  assert(el('companyListContainer').innerHTML.includes('OtherClient N.V.'));
+
+  // Prompt Rollover calculation
+  w.promptRollover('f-mc-2024');
+  assert.equal(el('rolloverTargetYear').value, 2025);
+  assert.equal(el('rolloverTargetYearDisplay').textContent, 'FY 2025');
+
+  // Confirm Rollover
+  let rolloverPayload = null;
+  sandbox.fetch = async (url, opts) => {
+    if (url.includes('/api/company/rollover')) {
+      rolloverPayload = JSON.parse(opts.body);
+      return {
+        ok: true,
+        json: async () => ({
+          filing_id: 'f-mc-2025',
+          kvk_number: '99887766',
+          entity_name: 'MultiCo B.V.',
+          period_start: '2025-01-01',
+          period_end: '2025-12-31',
+          taxonomy_id: 'test',
+          entry_point_key: 'ep',
+          state: 'draft',
+          facts: [{ id: 'rf-1', qname: 'kvk-i:Assets', kind: 'numeric', value: '50000', context_id: 'ctx_instant_prior', scale: 0, source: { location: 'prior', reviewer: 'tester' } }],
+          contexts: []
+        })
+      };
+    }
+    return { ok: true, json: async () => ({}) };
+  };
+  await w.confirmRollover();
+  assert.equal(rolloverPayload.target_year, 2025);
+  assert.equal(rolloverPayload.source_filing_id, 'f-mc-2024');
+  assert.equal(rolloverPayload.carry_over_comparatives, true);
+  assert.equal(w.state.filingId, 'f-mc-2025');
+  assert.equal(el('activeYearBadge').textContent, 'FY 2025');
+
+  console.log('Workspace regression checks passed: numbers, manual boolean/cell mapping, periods, restore, source reattachment, logout, multi-company directory, yearly rollover.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

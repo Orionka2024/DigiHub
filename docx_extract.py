@@ -69,6 +69,22 @@ def extract_docx(data: bytes) -> ExtractedDocument:
     nodes: list[SourceNode] = []
     paragraph_no = table_no = 0
     warnings: list[str] = []
+    from zipfile import ZipFile
+    from lxml import etree
+    with ZipFile(BytesIO(data)) as archive:
+        names = archive.namelist()
+        for fragment, label in (("vbaProject", "macros"), ("word/embeddings/", "embedded objects"),
+                                ("word/charts/", "charts"), ("word/diagrams/", "SmartArt")):
+            if any(fragment in name for name in names):
+                warnings.append(f"UNSUPPORTED_CONTENT: {label} are not preserved by this renderer.")
+        for name in names:
+            if name.startswith("word/") and name.endswith(".xml"):
+                root = etree.fromstring(archive.read(name), etree.XMLParser(resolve_entities=False, no_network=True))
+                kinds = {etree.QName(n).localname for n in root.iter() if isinstance(n.tag, str)}
+                for kind in sorted(kinds & {"drawing", "pict", "object", "altChunk", "txbxContent", "gridSpan", "vMerge", "ins", "del", "fldChar", "footnoteReference", "endnoteReference"}):
+                    warnings.append(f"UNSUPPORTED_CONTENT: {kind} in {name} requires source remediation.")
+                if root.xpath('//*[local-name()="tbl"]//*[local-name()="tbl"]'):
+                    warnings.append(f"UNSUPPORTED_CONTENT: nested tables in {name}.")
     body = document.element.body
     for child in body.iterchildren():
         if child.tag == qn("w:p"):

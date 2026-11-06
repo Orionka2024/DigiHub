@@ -36,10 +36,22 @@ class FilingService:
         critical_issues = [issue for issue in issues if issue.severity in {'error', 'critical'}]
         if critical_issues:
             raise ExportBlocked("; ".join(f"{issue.code}: {issue.message}" for issue in critical_issues))
+        if getattr(taxonomy, "reporting_year", 0) == 2025 and not snapshot.profile_id:
+            raise ExportBlocked("PROFILE: A reviewed 2025 reporting profile is required.")
+        if snapshot.profile_id:
+            from accounting_controls import undisposed_warnings
+            if undisposed_warnings(snapshot, issues):
+                raise ExportBlocked("REVIEW: Every warning requires a current documented disposition.")
+            # No production qualification is inferred from installing a taxonomy
+            # or obtaining zero diagnostics. Extension generation and the complete
+            # official conformance run must be qualified before this gate changes.
+            raise ExportBlocked("QUALIFICATION_INCOMPLETE: 2025 extension taxonomy generation and complete package conformance are not qualified.")
         if self.external_validator is None:
             raise ExportBlocked("VALIDATION_INCOMPLETE: An independent DTS, formula and filing-rule validator must be configured before export.")
         if document is None or document.sha256 != snapshot.document_sha256:
             raise ExportBlocked("PROVENANCE: The exact source document is required for rendering.")
+        if any(w.startswith("UNSUPPORTED_CONTENT:") for w in document.warnings):
+            raise ExportBlocked("SOURCE_UNSUPPORTED: Remediate unsupported Word content before export.")
         from mapping import source_value
         for fact in snapshot.facts:
             matches = []

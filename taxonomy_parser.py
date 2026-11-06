@@ -73,13 +73,15 @@ _TAG = {k: "{" + v + "}" for k, v in NS.items()}
 class CatalogResolver:
     """Resolves http:// taxonomy URIs to local filesystem paths via catalog.xml."""
 
-    def __init__(self, catalog_path: Path | None) -> None:
+    def __init__(self, catalog_path: Path | None, additional_catalogs=()) -> None:
         self.rules: list[tuple[str, str]] = []   # (uriStartString, rewritePrefix)
         self.base_dir: Path | None = catalog_path.parent.resolve() if catalog_path else None
         self._cache: dict[str, Path | None] = {}
         if catalog_path and catalog_path.exists():
             self._parse(catalog_path)
-            self.rules.sort(key=lambda item: len(item[0]), reverse=True)
+        for path in additional_catalogs:
+            self._parse(Path(path))
+        self.rules.sort(key=lambda item: len(item[0]), reverse=True)
 
     def _parse(self, path: Path) -> None:
         try:
@@ -89,7 +91,7 @@ class CatalogResolver:
                     start = rw.get("uriStartString", "")
                     prefix = rw.get("rewritePrefix", "")
                     if start and prefix:
-                        self.rules.append((start, prefix))
+                        self.rules.append((start, str((path.parent / prefix).resolve()) + "/"))
         except Exception as exc:
             print(f"[TaxonomyParser] Warning: could not parse catalog {path}: {exc}")
 
@@ -105,6 +107,19 @@ class CatalogResolver:
                 if self.base_dir:
                     result = (self.base_dir / rel).resolve()
                 break
+        if result is None:
+            # Use the pinned validator's bundled standard schemas offline. Never
+            # substitute another annual-report taxonomy or retrieve a remote URI.
+            try:
+                import arelle
+                from urllib.parse import urlsplit
+                parts = urlsplit(uri)
+                cache = Path(arelle.__file__).parent / "resources/cache"
+                candidate = (cache / parts.scheme / parts.netloc / parts.path.lstrip('/')).resolve()
+                if candidate.is_relative_to(cache.resolve()) and candidate.is_file():
+                    result = candidate
+            except ImportError:
+                pass
         self._cache[uri] = result
         return result
 
@@ -124,13 +139,14 @@ class TaxonomyParser:
     The results are suitable for building an EnrichedTaxonomyRelease.
     """
 
-    def __init__(self, base_dir: Path, catalog_path: Path | None = None, *, strict: bool = True) -> None:
+    def __init__(self, base_dir: Path, catalog_path: Path | None = None, *, strict: bool = True, additional_catalogs=()) -> None:
         self.base_dir = base_dir
         self.strict = strict
         self.errors: list[str] = []
         self.catalog_path = catalog_path
         self._concept_locations = {}
-        self.catalog = CatalogResolver(catalog_path)
+        self.additional_catalogs = tuple(additional_catalogs)
+        self.catalog = CatalogResolver(catalog_path, self.additional_catalogs)
         self._resolve_cache: dict[tuple[str, Path], Path | None] = {}
         # qname → ConceptMetadata (accumulated across all entry-point files)
         self.concepts: dict[str, ConceptMetadata] = {}
@@ -166,7 +182,7 @@ class TaxonomyParser:
         """Parse one entry point.  Returns (concepts_dict, rules_list)."""
         # Parse each entry point into an independent graph. Never seed it with another EP.
         version = taxonomy_version or self.taxonomy_version
-        self.__init__(self.base_dir, self.catalog_path, strict=self.strict)
+        self.__init__(self.base_dir, self.catalog_path, strict=self.strict, additional_catalogs=self.additional_catalogs)
         self.taxonomy_version = version
         self._current_ep = ep_key
         self.taxonomy_version = taxonomy_version or self.taxonomy_version

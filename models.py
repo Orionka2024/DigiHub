@@ -34,6 +34,8 @@ class Context:
     dimensions: tuple[Dimension, ...] = ()
 
     def __post_init__(self) -> None:
+        if len({d.axis for d in self.dimensions}) != len(self.dimensions):
+            raise ValueError("A context cannot repeat a dimension axis.")
         if not ((self.instant is not None and self.start_date is None and self.end_date is None) or
                 (self.instant is None and self.start_date is not None and self.end_date is not None)):
             raise ValueError("Context must have either an instant or start/end dates.")
@@ -53,6 +55,7 @@ class SourceRef:
     location: str
     extracted_value: str
     reviewer: str | None = None
+    reviewed_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -66,8 +69,20 @@ class Fact:
     unit_id: str | None = None
     decimals: int | None = None
     nil: bool = False
+    scale: int = 0
+    sign: str | None = None
+    number_format: str = "en"
 
     def __post_init__(self) -> None:
+        if type(self.scale) is not int or not -12 <= self.scale <= 12:
+            raise ValueError("Scale must be an integer between -12 and 12.")
+        if self.sign not in (None, "-") or self.number_format not in ("nl", "en"):
+            raise ValueError("Invalid numeric sign or number format.")
+        if self.kind != "numeric" and (self.scale or self.sign):
+            raise ValueError("Only numeric facts may carry scale/sign.")
+        if self.kind == "numeric" and not self.nil and isinstance(self.value, Decimal):
+            if self.sign == "-" and self.value >= 0:
+                raise ValueError("Sign '-' requires a negative canonical value.")
         if self.kind not in {"numeric", "text", "boolean", "date"}:
             raise ValueError("Unknown fact kind.")
         if not self.nil:
@@ -106,6 +121,18 @@ class FilingSnapshot:
     is_final: bool = False
     signatory_name: str | None = None
     approval_date: date | None = None
+    profile_id: str | None = None
+    taxonomy_version: str = ""
+    taxonomy_sha256: str = ""
+    dependency_checksums: dict[str, str] = field(default_factory=dict)
+    rules_version: str = ""
+    warning_dispositions: list[dict] = field(default_factory=list)
+
+    def review_digest(self) -> str:
+        """Bind warning decisions to content, excluding the decisions themselves."""
+        from dataclasses import replace
+        return replace(self, warning_dispositions=[], is_final=False,
+                       signatory_name=None, approval_date=None).content_digest()
 
 
     def __post_init__(self) -> None:

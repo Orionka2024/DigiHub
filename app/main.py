@@ -37,7 +37,8 @@ from app.models_api import (
     KvkLookupOut, MapFactIn, MapFactOut, MappingDecisionIn,
     ReviewRequirementIn, RunOut, SnapshotCreateIn, SnapshotOut,
     SourceNodeOut, TaxonomyReleaseIn, ValidateOut, ValidationIssueOut,
-    WorkspaceOut, WorkspaceSaveIn, FreezeIn, AutoTagRequest, AutoTagResponse
+    WorkspaceOut, WorkspaceSaveIn, FreezeIn, AutoTagRequest, AutoTagResponse,
+    CompanyListOut, RolloverIn
 )
 from app.store import store, current_actor, read_versions, StorageUnavailable, StorageConflict
 
@@ -140,7 +141,8 @@ def _parse_release_ep(release, ep_key):
     try:
         package = Path(release.package_path)
         catalog = package / "META-INF" / "catalog.xml"
-        parser = TaxonomyParser(package, catalog if catalog.exists() else None, strict=False)
+        parser = TaxonomyParser(package, catalog if catalog.exists() else None, strict=False,
+            additional_catalogs=[Path(p) / "META-INF/catalog.xml" for p in release.dependency_paths])
         concepts, rules = parser.parse_entry_point(release.entry_points[ep_key], ep_key, release.version)
         if not concepts:
             raise ValueError("Entry point contains no concepts.")
@@ -205,6 +207,14 @@ def _load_verified_taxonomies() -> None:
                     package_path=str(package), entry_points=eps,
                     entry_point_meta={key: value for key, value in manifest["entry_points"].items() if isinstance(value, dict)},
                     namespaces=manifest.get("namespaces", {}), rules_engine=RulesEngine())
+                dependency_paths = []
+                for dep in manifest.get("dependencies", []):
+                    archive = (manifest_path.parent / dep["package_file"]).resolve()
+                    if not archive.is_relative_to(_TAXONOMY_DIR.resolve()):
+                        raise ValueError("Dependency must be inside the taxonomy directory.")
+                    dependency_paths.append(str(extract_verified(archive, dep["sha256"], extraction_base)))
+                release.dependency_paths = tuple(dependency_paths)
+                release.dependency_checksums = {d["package_file"]: d["sha256"] for d in manifest.get("dependencies", [])}
                 requirements = tuple(TaggingRequirement(**item) for item in manifest.get("requirements", []))
                 release.requirements = {key: requirements for key in eps}
                 if verified and release.status == "final":
@@ -630,6 +640,10 @@ def _snap_out(snap: FilingSnapshot, warnings: list[str] | None = None) -> Snapsh
     except KeyError:
         document = None
     return SnapshotOut(
+        profile_id=snap.profile_id, taxonomy_version=snap.taxonomy_version,
+        taxonomy_sha256=snap.taxonomy_sha256, rules_version=snap.rules_version,
+        dependency_checksums=snap.dependency_checksums,
+        warning_dispositions=snap.warning_dispositions,
         facts=saved["facts"], contexts=saved["contexts"], units=saved["units"], document=document,
         is_final=snap.is_final, signatory_name=snap.signatory_name, approval_date=snap.approval_date,
         filing_id=snap.filing_id,
@@ -650,6 +664,12 @@ def _snap_out(snap: FilingSnapshot, warnings: list[str] | None = None) -> Snapsh
     )
 
 
+@app.get("/api/profiles/supported")
+def supported_profiles():
+    from reporting_profile import catalog
+    return {"profiles": catalog(), "policy": "application support, not legal eligibility", "export_qualified": False}
+
+
 @app.post("/api/snapshot/create", response_model=SnapshotOut, status_code=201)
 async def create_snapshot(payload: SnapshotCreateIn) -> SnapshotOut:
     """Create a new empty FilingSnapshot from entity metadata and document hash."""
@@ -668,7 +688,15 @@ async def create_snapshot(payload: SnapshotCreateIn) -> SnapshotOut:
             taxonomy_id=payload.taxonomy_id,
             entry_point_key=payload.entry_point_key,
             document_sha256=payload.document_sha256,
+            profile_id=payload.profile_id, taxonomy_version=getattr(release, "version", ""),
+            taxonomy_sha256=release.sha256, dependency_checksums=dict(getattr(release, "dependency_checksums", {})),
+            rules_version=__import__("reporting_profile").RULES_2025 if payload.profile_id else "",
         )
+        if payload.profile_id:
+            from reporting_profile import check_profile
+            check_profile(snap, release)
+        elif getattr(release, "reporting_year", 0) == 2025:
+            raise ValueError("An explicit reporting profile is required for 2025.")
     except (ValueError, TypeError, KeyError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     store.add(snap)
@@ -727,7 +755,8 @@ async def map_fact(filing_id: str, payload: MapFactIn) -> MapFactOut:
         fact = fact_from_decision(source_document, MappingDecision(
             source_node_id=d.source_node_id, source_location=d.source_location, qname=d.qname,
             context_id=d.context_id, kind=d.kind, value=value, unit_id=d.unit_id,
-            decimals=d.decimals, reviewer=current_actor.get()))
+            decimals=d.decimals, reviewer=current_actor.get(),
+            scale=d.scale, sign=d.sign, number_format=d.number_format))
         if any(c.entity_identifier != snap.kvk_number or c.entity_scheme != "http://www.kvk.nl/kvk-id" for c in contexts):
             raise ValueError("Context entity must match the filing.")
         if fact.context_id not in {c.id for c in contexts}:
@@ -825,6 +854,48 @@ async def review_requirement(filing_id: str, payload: ReviewRequirementIn) -> di
     return {"reviewed": list(snap.reviewed_requirement_ids)}
 
 
+from app.models_api import WarningDispositionIn
+
+
+@app.get("/api/snapshot/{filing_id}/accounting-review")
+def accounting_review(filing_id: str):
+    from accounting_controls import issue_id, undisposed_warnings, taxonomy_reconciliations
+    try:
+        snap = store.get(filing_id)
+        issues = validate_snapshot(snap, taxonomy_registry.get(snap.taxonomy_id))
+        return {"issues": [{**asdict(i), "issue_id": issue_id(i)} for i in issues],
+                "undisposed_warning_ids": [issue_id(i) for i in undisposed_warnings(snap, issues)],
+                "reconciliations": taxonomy_reconciliations(snap, taxonomy_registry.get(snap.taxonomy_id)),
+                "accounting_coverage": "Structural, duplicate and available taxonomy calculations only; accountant review required."}
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.post("/api/snapshot/{filing_id}/warning-dispositions")
+def dispose_warning(filing_id: str, payload: WarningDispositionIn):
+    from accounting_controls import issue_id
+    from datetime import datetime, timezone
+    try:
+        snap = store.get(filing_id)
+        if snap.state not in (FilingState.DRAFT, FilingState.REVIEWED):
+            raise HTTPException(409, "Reopen the filing before changing warning dispositions.")
+        issues = validate_snapshot(snap, taxonomy_registry.get(snap.taxonomy_id))
+        if not any(i.severity == "warning" and issue_id(i) == payload.issue_id for i in issues):
+            raise ValueError("Only a current warning can be dispositioned; errors cannot be waived.")
+        if len(payload.reason.strip()) < 10:
+            raise ValueError("A meaningful review reason is required.")
+        record = {"issue_id": payload.issue_id, "reason": payload.reason.strip(),
+                  "reviewer": current_actor.get(), "disposed_at": datetime.now(timezone.utc).isoformat(),
+                  "content_digest": snap.review_digest()}
+        snap.warning_dispositions = [d for d in snap.warning_dispositions if d.get("issue_id") != payload.issue_id] + [record]
+        store.update(snap)
+        return record
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @app.post("/api/snapshot/{filing_id}/freeze", response_model=SnapshotOut)
 async def freeze_snapshot(filing_id: str, payload: FreezeIn) -> SnapshotOut:
     """Freeze the snapshot.  Required before validate-and-package."""
@@ -837,6 +908,9 @@ async def freeze_snapshot(filing_id: str, payload: FreezeIn) -> SnapshotOut:
         candidate = replace(snap, is_final=payload.is_final, signatory_name=payload.signatory_name, approval_date=payload.approval_date)
         issues = validate_snapshot(candidate, taxonomy)
         critical_issues = [i for i in issues if i.severity in {'error', 'critical'}]
+        if candidate.profile_id:
+            from accounting_controls import undisposed_warnings
+            critical_issues += undisposed_warnings(candidate, issues)
         if critical_issues:
             raise ValueError("Validation must pass before freeze: " + "; ".join(i.code for i in critical_issues))
         store.get_document(snap.document_sha256)
@@ -855,6 +929,7 @@ async def reopen_snapshot(filing_id: str) -> SnapshotOut:
         raise HTTPException(status_code=404, detail=str(exc))
     snap.state = FilingState.DRAFT
     snap.frozen_at = snap.frozen_digest = snap.validation_digest = None
+    snap.warning_dispositions = []
     snap.is_final = False
     snap.signatory_name = snap.approval_date = None
     store.update(snap)
@@ -878,9 +953,12 @@ async def validate_only(filing_id: str) -> ValidateOut:
         issues.append(ValidationIssue("TAXONOMY_UNVERIFIED", "This taxonomy is available for preparation only; its package is not verified."))
     if filing_service.external_validator is None:
         issues.append(ValidationIssue("VALIDATION_INCOMPLETE", "Independent DTS, formula and filing-rule validation is not configured."))
+    from accounting_controls import issue_id, undisposed_warnings
+    pending = {issue_id(i) for i in undisposed_warnings(snap, issues)}
     return ValidateOut(
         ok=len(issues) == 0,
-        issues=[ValidationIssueOut(**asdict(i)) for i in issues],
+        issues=[ValidationIssueOut(**asdict(i), issue_id=issue_id(i),
+                                   disposition_current=i.severity == "warning" and issue_id(i) not in pending) for i in issues],
     )
 
 
@@ -959,6 +1037,30 @@ def provider_handoff(filing_id: str):
                              headers={"Content-Disposition": 'attachment; filename="provider-handoff.zip"'})
 
 
+@app.post("/api/snapshot/{filing_id}/audit-handoff")
+def audit_handoff(filing_id: str):
+    from submission import create_audit_bundle
+    from arelle_validator import diagnose
+    try:
+        snap = store.get(filing_id)
+        taxonomy = taxonomy_registry.get(snap.taxonomy_id)
+        document = store.get_document(snap.document_sha256)
+        payload = filing_service.validate_and_package(snap, document)
+        roots = [getattr(taxonomy, "package_path", ""), *getattr(taxonomy, "dependency_paths", ())]
+        packages = [Path(p) / "META-INF/taxonomyPackage.xml" for p in roots if p]
+        diagnostics = diagnose(payload, suffix=".zip", packages=packages, profile="NL-INLINE-2025")
+        history = store._read("filing", filing_id).get("audit_events", [])
+        bundle = create_audit_bundle(payload, snap, taxonomy, document=document,
+                                     validation_results=diagnostics, change_history=history)
+        store.update(snap)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (ValueError, ExportBlocked) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return StreamingResponse(io.BytesIO(bundle), media_type="application/zip",
+                             headers={"Content-Disposition": 'attachment; filename="audit-review.zip"'})
+
+
 # ── KVK entity lookup ──────────────────────────────────────────────────────────
 
 @app.get("/api/kvk-lookup/{kvk_number}", response_model=KvkLookupOut)
@@ -1003,6 +1105,104 @@ async def filing_audit(filing_id: str):
 @app.get("/api/workspace/list")
 async def list_workspaces():
     return {"filings": store.list_filings()}
+
+
+@app.get("/api/companies", response_model=CompanyListOut)
+async def list_companies():
+    """List all client companies and their historical annual filings."""
+    return {"companies": store.list_companies()}
+
+
+@app.post("/api/company/rollover", response_model=SnapshotOut, status_code=201)
+async def rollover_company(payload: RolloverIn) -> SnapshotOut:
+    """Rollover an existing company's filing into a new financial year."""
+    try:
+        source_snap = store.get(payload.source_filing_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Source filing not found.") from exc
+
+    current_year = source_snap.period_end.year
+    target_year = payload.target_year or (current_year + 1)
+    if target_year <= current_year:
+        raise HTTPException(status_code=422, detail=f"Target financial year ({target_year}) must be after current year ({current_year}).")
+
+    year_diff = target_year - current_year
+    try:
+        new_start = date(source_snap.period_start.year + year_diff, source_snap.period_start.month, source_snap.period_start.day)
+        new_end = date(source_snap.period_end.year + year_diff, source_snap.period_end.month, source_snap.period_end.day)
+    except ValueError:
+        new_start = date(source_snap.period_start.year + year_diff, source_snap.period_start.month, 28)
+        new_end = date(source_snap.period_end.year + year_diff, source_snap.period_end.month, 28)
+
+    from reporting_profile import get_profile, list_supported_profiles
+    new_profile_id = source_snap.profile_id
+    new_taxonomy_id = source_snap.taxonomy_id
+    new_entry_point = source_snap.entry_point_key
+
+    if new_profile_id:
+        try:
+            curr_prof = get_profile(new_profile_id)
+            target_prof_id = f"{target_year}-{curr_prof.framework}-{curr_prof.company_size}-{curr_prof.sector}-{curr_prof.scope}"
+            matched = get_profile(target_prof_id)
+            new_profile_id = matched.id
+            new_taxonomy_id = matched.taxonomy_id
+            new_entry_point = matched.entry_point_key
+        except Exception:
+            pass
+
+    from models import Context, Dimension, Fact, SourceRef, Unit
+    new_contexts = [
+        Context(id="ctx_current", entity_scheme="http://www.kvk.nl/kvk-id", entity_identifier=source_snap.kvk_number,
+                start_date=new_start, end_date=new_end),
+        Context(id="ctx_instant_end", entity_scheme="http://www.kvk.nl/kvk-id", entity_identifier=source_snap.kvk_number,
+                instant=new_end),
+        Context(id="ctx_prior", entity_scheme="http://www.kvk.nl/kvk-id", entity_identifier=source_snap.kvk_number,
+                start_date=source_snap.period_start, end_date=source_snap.period_end),
+        Context(id="ctx_instant_prior", entity_scheme="http://www.kvk.nl/kvk-id", entity_identifier=source_snap.kvk_number,
+                instant=source_snap.period_end),
+    ]
+
+    new_units = list(source_snap.units) if source_snap.units else [Unit(id="eur", measure="iso4217:EUR")]
+
+    new_facts = []
+    if payload.carry_over_comparatives:
+        for f in source_snap.facts:
+            if f.context_id == "ctx_instant_end":
+                new_fact_id = f"rollover-{uuid.uuid4().hex[:12]}"
+                new_facts.append(Fact(
+                    id=new_fact_id, qname=f.qname, context_id="ctx_instant_prior",
+                    value=f.value, kind=f.kind, nil=f.nil,
+                    source=SourceRef(
+                        document_sha256=source_snap.document_sha256,
+                        location=f"Rolled over from FY {current_year}",
+                        extracted_value=str(f.value),
+                        reviewer=current_actor.get(),
+                        reviewed_at=datetime.now(timezone.utc).isoformat()
+                    ),
+                    unit_id=f.unit_id, decimals=f.decimals, scale=f.scale, sign=f.sign,
+                    number_format=f.number_format
+                ))
+
+    new_filing_id = str(uuid.uuid4())
+    new_snap = FilingSnapshot(
+        filing_id=new_filing_id,
+        entity_name=source_snap.entity_name,
+        kvk_number=source_snap.kvk_number,
+        period_start=new_start,
+        period_end=new_end,
+        taxonomy_id=new_taxonomy_id,
+        entry_point_key=new_entry_point,
+        document_sha256=source_snap.document_sha256,
+        profile_id=new_profile_id,
+        taxonomy_version=source_snap.taxonomy_version,
+        taxonomy_sha256=source_snap.taxonomy_sha256,
+        rules_version=source_snap.rules_version,
+        contexts=new_contexts,
+        units=new_units,
+        facts=new_facts,
+    )
+    store.add(new_snap)
+    return _snap_out(new_snap)
 
 
 # ── Workspace save / load ──────────────────────────────────────────────────────

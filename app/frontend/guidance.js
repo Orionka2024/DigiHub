@@ -73,26 +73,7 @@
     modal.style.display = 'flex';
   };
   w.loadWorkspacePrompt = async function() {
-    document.getElementById('savedModal').style.display = 'flex';
-    const box = document.getElementById('savedContent');
-    box.textContent = 'Loading your saved filings…';
-    try {
-      const response = await fetch('/api/workspace/list');
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || 'Saved filings could not be loaded.');
-      box.innerHTML = data.filings.length ? data.filings.map(f => `<button class="saved-filing" data-filing="${this._esc(f.filing_id)}" data-kvk="${this._esc(f.kvk_number)}"><strong>${this._esc(f.entity_name)}</strong><span>${this._esc(f.kvk_number)} · ${this._esc(f.period_start)} to ${this._esc(f.period_end)} · ${this._esc(f.state)} · Not submitted</span></button>`).join('') : '<p>No saved filings are available to this account.</p>';
-      box.querySelectorAll('button').forEach(button => button.addEventListener('click', async () => {
-        try {
-          const res = await fetch(`/api/workspace/load/${encodeURIComponent(button.dataset.kvk)}?filing_id=${encodeURIComponent(button.dataset.filing)}`);
-          const snap = await res.json();
-          if (!res.ok) throw new Error(snap.detail || 'Load failed.');
-          this._restoreSnapshot(snap); this.renderWorkspace(); await this.fetchRequirements();
-          document.getElementById('savedModal').style.display = 'none';
-          document.getElementById('saveStatus').textContent = 'Loaded from durable storage';
-          this.refreshGuide();
-        } catch (error) { this.setNavStatus(error.message, 'error'); }
-      }));
-    } catch (error) { box.textContent = error.message; }
+    this.openCompanyHub();
   };
   const originalLog = w.showLogBook;
   w.showLogBook = async function() {

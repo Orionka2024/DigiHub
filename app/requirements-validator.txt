@@ -1,2 +1,5 @@
 -r requirements.txt
 arelle-release==2.45.0
+# Netherlands inline validation imports the ESEF CSS validator.
+tinycss2==1.4.0
+webencodings==0.6.1

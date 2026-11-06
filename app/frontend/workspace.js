@@ -64,6 +64,11 @@ window.workspace = {
 
   // ── Initialisation ─────────────────────────────────────────────────────────
   async init() {
+    fetch(`${this.BASE_URL}/api/profiles/supported`).then(r => r.json()).then(data => {
+      const select = document.getElementById('reportingProfile');
+      if (select) select.innerHTML = '<option value="">Choose a 2025 profile…</option>' + data.profiles.map(p =>
+        `<option value="${this._esc(p.id)}">${this._esc(`${p.financial_year} / ${p.framework} / ${p.company_size} / ${p.consolidation} — preparation`)}</option>`).join('');
+    }).catch(() => {});
     this.refreshTaxonomyList();
     fetch(`${this.BASE_URL}/health`).then(r=>r.json()).then(health=>{
       const notice = document.getElementById('readinessNotice');
@@ -86,6 +91,7 @@ window.workspace = {
 
     // Attach global event listeners for new UX features
     this._attachDocumentEventListeners();
+    this.updateEntityDisplay();
   },
 
   _attachDocumentEventListeners() {
@@ -364,6 +370,7 @@ window.workspace = {
     document.getElementById('periodEndInput').value   = this.state.periodEnd;
     document.getElementById('taxonomyIdInput').value  = this.state.taxonomyId;
     document.getElementById('entryPointInput').value  = this.state.entryPointKey;
+    document.getElementById('reportingProfile').value = this.state.profileId || '';
   },
 
   closeEntityModal() {
@@ -396,6 +403,8 @@ window.workspace = {
     const start = document.getElementById('periodStartInput').value, end = document.getElementById('periodEndInput').value;
     if (!start || !end || start > end || !/^\d{8}$/.test(document.getElementById('kvkInput').value.trim()) || !document.getElementById('entityNameInput').value.trim()) { alert('Enter an eight-digit KVK number, company name and valid financial-year dates.'); return; }
     if (!document.getElementById('entryPointInput').value) { alert('Choose the company size and reporting profile first.'); return; }
+    if (document.getElementById('taxonomyIdInput').value === 'KVK_IXBRL_2025' && !document.getElementById('reportingProfile').value) { alert('Choose the explicit 2025 iXBRL reporting profile.'); return; }
+    if (this.state.filingId && (this.state.profileId || '') !== document.getElementById('reportingProfile').value) { alert('Start a new filing to change the reporting profile.'); return; }
     if (this.state.filingId) {
       const fields = [['kvkInput','kvkNumber'],['entityNameInput','entityName'],['periodStartInput','periodStart'],['periodEndInput','periodEnd'],['taxonomyIdInput','taxonomyId'],['entryPointInput','entryPointKey']];
       if (fields.some(([id,key]) => Boolean(this.state[key]) && document.getElementById(id).value.trim() !== this.state[key])) {
@@ -403,6 +412,7 @@ window.workspace = {
         return;
       }
     }
+    this.state.profileId = this.state.taxonomyId === 'KVK_IXBRL_2025' ? document.getElementById('reportingProfile').value : null;
     this.state.kvkNumber    = document.getElementById('kvkInput').value.trim();
     this.state.entityName   = document.getElementById('entityNameInput').value.trim();
     this.state.periodStart  = document.getElementById('periodStartInput').value;
@@ -412,6 +422,7 @@ window.workspace = {
 
     document.getElementById('entityStatusLabel').innerText =
       `${this.state.kvkNumber} · ${this.state.entityName}`;
+    this.updateEntityDisplay();
     this.closeEntityModal();
 
     if (this.state.document && !this.state.filingId) {
@@ -492,6 +503,7 @@ window.workspace = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          profile_id: this.state.taxonomyId === "KVK_IXBRL_2025" ? this.state.profileId || null : null,
           entity_name:     this.state.entityName,
           kvk_number:      this.state.kvkNumber,
           period_start:    this.state.periodStart,
@@ -578,12 +590,13 @@ window.workspace = {
   },
 
   _enablePostDocButtons() {
-    ['btnSaveSession', 'btnLogBook', 'btnDiagnostics']
+    ['btnSaveSession', 'btnLogBook', 'btnDiagnostics', 'btnRollover']
       .forEach(id => {
         const el = document.getElementById(id);
         if (el) el.disabled = !this.state.filingId;
       });
     this.updateStatePill(this.state.filingState);
+    this.updateEntityDisplay();
   },
 
   // ── Rendering ──────────────────────────────────────────────────────────────
@@ -1104,6 +1117,8 @@ window.workspace = {
     if (node.kind === 'paragraph') prefillVal = node.text;
     if (isCell) prefillVal = cellText;
     document.getElementById('mapValue').value = prefillVal;
+    document.getElementById('mapScale').value = this.state.mappings[nodeId]?.scale ?? 0;
+    document.getElementById('mapSourceLocale').value = this.state.mappings[nodeId]?.numberFormat || 'nl';
 
     // Pre-fill reviewer
     document.getElementById('mapReviewer').value = this.currentUser.name;
@@ -1192,6 +1207,9 @@ window.workspace = {
         value,
         unit_id: kind === 'numeric' ? unitId : null,
         decimals,
+        scale: kind === 'numeric' ? Number(document.getElementById('mapScale').value) : 0,
+        sign: kind === 'numeric' && String(value).startsWith('-') ? '-' : null,
+        number_format: document.getElementById('mapSourceLocale').value,
         reviewer,
       },
       context: ctx,
@@ -1223,6 +1241,7 @@ window.workspace = {
 
       // Store locally
       this.state.mappings[nodeId] = {
+        scale: payload.decision.scale, numberFormat: payload.decision.number_format,
         factId: result.fact_id,
         qname: result.qname,
         kind,
@@ -1257,7 +1276,7 @@ window.workspace = {
   },
 
   _restoreSnapshot(snap) {
-    Object.assign(this.state, {filingId: snap.filing_id, kvkNumber: snap.kvk_number,
+    Object.assign(this.state, {profileId: snap.profile_id || null, filingId: snap.filing_id, kvkNumber: snap.kvk_number,
       entityName: snap.entity_name, periodStart: snap.period_start, periodEnd: snap.period_end,
       taxonomyId: snap.taxonomy_id, entryPointKey: snap.entry_point_key,
       document: snap.document, mappings: {}, activeNodeId: null});
@@ -1267,7 +1286,7 @@ window.workspace = {
       if (!node) continue;
       const cell = location.match(/, Row (\d+), Col (\d+)$/);
       const key = cell ? `${node.id}-r${Number(cell[1])-1}c${Number(cell[2])-1}` : node.id;
-      this.state.mappings[key] = {factId: fact.id, qname: fact.qname, kind: fact.kind,
+      this.state.mappings[key] = {scale: fact.scale ?? 0, numberFormat: fact.number_format, factId: fact.id, qname: fact.qname, kind: fact.kind,
         value: fact.value, contextId: fact.context_id, reviewer: fact.source.reviewer, origin: fact.origin || 'auto'};
     }
     document.getElementById('entityStatusLabel').innerText = `${snap.kvk_number} · ${snap.entity_name}`;
@@ -1437,11 +1456,25 @@ window.workspace = {
               ${ruleRefBadge}
             </div>
             <div style="color:#4b5563; font-size:0.82rem; line-height: 1.4;">${this._esc(issue.message)}</div>
+            ${isWarning && issue.issue_id ? (issue.disposition_current ? '<p>Review decision recorded for this content.</p>' : `<button class="btn-secondary" data-warning-id="${this._esc(issue.issue_id)}">Record review reason</button>`) : ''}
           </div>
         </li>`;
     }
     html += '</ul>';
     container.innerHTML = html;
+    container.querySelectorAll('[data-warning-id]').forEach(button => button.addEventListener('click', () => this.recordWarningDisposition(button.dataset.warningId)));
+  },
+
+  async recordWarningDisposition(issueId) {
+    const reason = prompt('Explain why this warning is acceptable for external review. Changing the report will invalidate this decision.');
+    if (!reason) return;
+    try {
+      const response = await fetch(`${this.BASE_URL}/api/snapshot/${this.state.filingId}/warning-dispositions`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({issue_id: issueId, reason})
+      });
+      if (!response.ok) { const error = await response.json(); throw new Error(error.detail || 'Review decision could not be saved.'); }
+      await this.runDiagnostics();
+    } catch (error) { this.setNavStatus(error.message, 'error'); }
   },
 
   // ── Sign-Off / Freeze ──────────────────────────────────────────────────────
@@ -1517,7 +1550,7 @@ window.workspace = {
     if (!this.state.filingId) return;
     this.setNavStatus('Generating & validating package…', 'loading');
     try {
-      const action = handoff ? 'provider-handoff' : 'validate-and-package';
+      const action = handoff ? 'audit-handoff' : 'validate-and-package';
       const res = await fetch(`${this.BASE_URL}/api/snapshot/${this.state.filingId}/${action}`, { method: 'POST' });
       if (!res.ok) {
         const err = await res.json();
@@ -1527,7 +1560,7 @@ window.workspace = {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = handoff ? 'provider-handoff.zip' : `report_${this.state.kvkNumber}_${this.state.periodEnd.split('-')[0]}.zip`;
+      a.download = handoff ? 'audit-review.zip' : `report_${this.state.kvkNumber}_${this.state.periodEnd.split('-')[0]}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1606,6 +1639,280 @@ window.workspace = {
 
     } catch (e) {
       this.setNavStatus('Load failed', 'error');
+    }
+  },
+
+  updateEntityDisplay() {
+    const nameEl = document.getElementById('activeCompanyName');
+    const yearEl = document.getElementById('activeYearBadge');
+    const statusLabel = document.getElementById('entityStatusLabel');
+    const btnRollover = document.getElementById('btnRollover');
+
+    if (this.state.entityName) {
+      if (nameEl) nameEl.textContent = this.state.entityName;
+      const year = this.state.periodEnd ? this.state.periodEnd.slice(0, 4) : '';
+      if (yearEl) {
+        if (year) {
+          yearEl.textContent = `FY ${year}`;
+          yearEl.style.display = '';
+        } else {
+          yearEl.style.display = 'none';
+        }
+      }
+      if (statusLabel) {
+        statusLabel.textContent = `${this.state.kvkNumber} · ${this.state.entityName}`;
+        statusLabel.style.display = '';
+      }
+    } else {
+      if (nameEl) nameEl.textContent = 'Select Company';
+      if (yearEl) yearEl.style.display = 'none';
+      if (statusLabel) {
+        statusLabel.textContent = 'No Entity Set';
+        statusLabel.style.display = 'none';
+      }
+    }
+    if (btnRollover) {
+      btnRollover.disabled = !this.state.filingId;
+    }
+  },
+
+  // ── Company Directory & Yearly Management ──────────────────────────────────
+  async openCompanyHub() {
+    const modal = document.getElementById('companyHubModal');
+    if (modal) modal.style.display = 'flex';
+    const search = document.getElementById('companySearchInput');
+    if (search) search.value = '';
+    await this.renderCompanyHub();
+  },
+
+  closeCompanyHub() {
+    const modal = document.getElementById('companyHubModal');
+    if (modal) modal.style.display = 'none';
+  },
+
+  async renderCompanyHub(filter = '') {
+    const container = document.getElementById('companyListContainer');
+    if (!container) return;
+    try {
+      if (!this._cachedCompanies || !filter) {
+        const res = await fetch(`${this.BASE_URL}/api/companies`);
+        if (!res.ok) throw new Error('Failed to load companies.');
+        const data = await res.json();
+        this._cachedCompanies = data.companies || [];
+      }
+      let list = this._cachedCompanies;
+      const q = (filter || '').trim().toLowerCase();
+      if (q) {
+        list = list.filter(c =>
+          (c.entity_name && c.entity_name.toLowerCase().includes(q)) ||
+          (c.kvk_number && c.kvk_number.includes(q))
+        );
+      }
+
+      if (!list.length) {
+        container.innerHTML = `
+          <div class="empty-state" style="padding: 2.5rem 1rem;">
+            ${q ? 'No matching companies found for "' + this._esc(q) + '".' : 'No client companies found yet. Click "+ New Company" to start one.'}
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = list.map(c => {
+        const isActive = c.kvk_number === this.state.kvkNumber;
+        const filings = c.filings || [];
+        const latestFilingId = c.latest_filing_id || (filings[0] ? filings[0].filing_id : null);
+        return `
+          <div class="company-card ${isActive ? 'active-company' : ''}">
+            <div class="company-card-header">
+              <div class="company-card-title">
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <strong>${this._esc(c.entity_name)}</strong>
+                  ${isActive ? '<span style="font-size:0.68rem; background:#dbeafe; color:#1e40af; padding:1px 6px; border-radius:3px; font-weight:600;">ACTIVE</span>' : ''}
+                </div>
+                <div class="company-meta">
+                  <span class="company-kvk-pill">KVK ${this._esc(c.kvk_number)}</span>
+                  <span>${c.total_filings} filing(s)</span>
+                  ${c.latest_year ? `<span>Latest FY ${this._esc(String(c.latest_year))}</span>` : ''}
+                </div>
+              </div>
+              <div style="display:flex; gap:0.5rem; align-items:center;">
+                ${latestFilingId ? `
+                  <button class="rollover-btn-small" onclick="workspace.promptRollover('${this._esc(latestFilingId)}')" title="Rollover latest filing into next financial year">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                    Start Next Year
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+            <div class="company-filings-grid">
+              ${filings.map(f => {
+                const isCurrentFiling = f.filing_id === this.state.filingId;
+                const year = f.financial_year || (f.period_end ? f.period_end.slice(0, 4) : '—');
+                const statusClass = f.state || 'draft';
+                return `
+                  <div class="filing-year-badge ${isCurrentFiling ? 'current-active' : ''}"
+                       onclick="workspace.loadCompanyFiling('${this._esc(c.kvk_number)}', '${this._esc(f.filing_id)}')"
+                       title="Open FY ${this._esc(String(year))} filing (${this._esc(f.state)})">
+                    <strong>FY ${this._esc(String(year))}</strong>
+                    <span class="badge-status ${this._esc(statusClass)}">${this._esc(f.state)}</span>
+                    <span style="font-size:0.7rem; color:${isCurrentFiling ? '#ffffff' : '#64748b'};">(${f.fact_count} facts)</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      container.innerHTML = `<div class="empty-state" style="color:var(--text-error); padding:2rem;">Failed to load company directory: ${this._esc(e.message)}</div>`;
+    }
+  },
+
+  filterCompanyList(query) {
+    this.renderCompanyHub(query);
+  },
+
+  async loadCompanyFiling(kvk, filingId) {
+    this.closeCompanyHub();
+    this.setNavStatus('Loading company filing…', 'loading');
+    try {
+      const res = await fetch(`${this.BASE_URL}/api/workspace/load/${encodeURIComponent(kvk)}?filing_id=${encodeURIComponent(filingId)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to load filing.');
+      }
+      const snap = await res.json();
+      this._restoreSnapshot(snap);
+      this.renderWorkspace();
+      await this.fetchRequirements();
+      this.updateEntityDisplay();
+      if (typeof this.refreshGuide === 'function') this.refreshGuide();
+      const year = snap.period_end ? snap.period_end.slice(0, 4) : '';
+      this.setNavStatus(`Loaded ${snap.entity_name} (FY ${year}, ${snap.facts?.length || 0} facts).`);
+    } catch (e) {
+      this.setNavStatus(`Load failed: ${e.message}`, 'error');
+    }
+  },
+
+  openNewCompanyModal() {
+    this.closeCompanyHub();
+    this.newFiling();
+  },
+
+  // ── Yearly Rollover ────────────────────────────────────────────────────────
+  promptRollover(sourceFilingId = null) {
+    const filingId = sourceFilingId || this.state.filingId;
+    if (!filingId) {
+      alert('Please select or open a company filing to rollover from.');
+      return;
+    }
+    this._rolloverSourceFilingId = filingId;
+
+    // Find source metadata
+    let entityName = this.state.entityName;
+    let kvk = this.state.kvkNumber;
+    let currentYear = this.state.periodEnd ? parseInt(this.state.periodEnd.slice(0, 4), 10) : 2024;
+
+    if (this._cachedCompanies && sourceFilingId && sourceFilingId !== this.state.filingId) {
+      for (const comp of this._cachedCompanies) {
+        const match = (comp.filings || []).find(f => f.filing_id === sourceFilingId);
+        if (match) {
+          entityName = comp.entity_name;
+          kvk = comp.kvk_number;
+          currentYear = match.financial_year || (match.period_end ? parseInt(match.period_end.slice(0, 4), 10) : currentYear);
+          break;
+        }
+      }
+    }
+
+    const targetYear = currentYear + 1;
+    this._rolloverCurrentYear = currentYear;
+
+    const modal = document.getElementById('rolloverModal');
+    if (modal) modal.style.display = 'flex';
+
+    const elName = document.getElementById('rolloverCompanyName');
+    const elKvk = document.getElementById('rolloverKvk');
+    const elSrcYear = document.getElementById('rolloverSourceYear');
+    const elTargetDisplay = document.getElementById('rolloverTargetYearDisplay');
+    const elTargetInput = document.getElementById('rolloverTargetYear');
+    const elComparatives = document.getElementById('rolloverComparatives');
+
+    if (elName) elName.textContent = entityName || 'Selected Company';
+    if (elKvk) elKvk.textContent = kvk || '—';
+    if (elSrcYear) elSrcYear.textContent = `FY ${currentYear}`;
+    if (elTargetDisplay) elTargetDisplay.textContent = `FY ${targetYear}`;
+    if (elTargetInput) {
+      elTargetInput.value = targetYear;
+      elTargetInput.min = currentYear + 1;
+    }
+    if (elComparatives) elComparatives.checked = true;
+  },
+
+  updateRolloverYearChange(year) {
+    const elTargetDisplay = document.getElementById('rolloverTargetYearDisplay');
+    if (elTargetDisplay) {
+      elTargetDisplay.textContent = year ? `FY ${year}` : '—';
+    }
+  },
+
+  closeRolloverModal() {
+    const modal = document.getElementById('rolloverModal');
+    if (modal) modal.style.display = 'none';
+    this._rolloverSourceFilingId = null;
+  },
+
+  async confirmRollover() {
+    const sourceFilingId = this._rolloverSourceFilingId;
+    if (!sourceFilingId) return;
+
+    const inputYear = document.getElementById('rolloverTargetYear');
+    const targetYear = inputYear ? parseInt(inputYear.value, 10) : null;
+    const comparativesCheckbox = document.getElementById('rolloverComparatives');
+    const carryForward = comparativesCheckbox ? comparativesCheckbox.checked : true;
+
+    if (!targetYear || isNaN(targetYear)) {
+      alert('Please enter a valid target financial year.');
+      return;
+    }
+
+    this.setNavStatus(`Rolling over filing to FY ${targetYear}…`, 'loading');
+    const btn = document.getElementById('btnConfirmRollover');
+    if (btn) btn.disabled = true;
+
+    try {
+      const res = await fetch(`${this.BASE_URL}/api/company/rollover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_filing_id: sourceFilingId,
+          target_year: targetYear,
+          carry_over_comparatives: carryForward
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Rollover failed.');
+      }
+
+      const newSnap = await res.json();
+      this.closeRolloverModal();
+      this.closeCompanyHub();
+      this._cachedCompanies = null; // Invalidate cache so hub refreshes next time
+
+      this._restoreSnapshot(newSnap);
+      this.renderWorkspace();
+      await this.fetchRequirements();
+      this.updateEntityDisplay();
+      if (typeof this.refreshGuide === 'function') this.refreshGuide();
+
+      this.setNavStatus(`Rollover complete! Created FY ${targetYear} filing for ${newSnap.entity_name} (${newSnap.facts?.length || 0} facts carried forward).`);
+    } catch (e) {
+      this.setNavStatus(`Rollover failed: ${e.message}`, 'error');
+      alert(`Rollover failed: ${e.message}`);
+    } finally {
+      if (btn) btn.disabled = false;
     }
   },
 

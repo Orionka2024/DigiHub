@@ -1,0 +1,64 @@
+{
+  "id": "KVK_IXBRL_2025",
+  "status": "final",
+  "version": "2025-12-31",
+  "name": "KVK iXBRL 2025 \u2014 qualification candidate",
+  "authority": "KVK / SBR",
+  "publication_date": "2025-12-31",
+  "reporting_year": 2025,
+  "reporting_date": "2025-12-31",
+  "package_file": "kvk-2025_taxonomie.zip",
+  "sha256": "99209668da05505f1225015f60c466dbebadb488f9c3925eae2579f0269f9619",
+  "source_url": "https://www.sbr-nl.nl/sites/default/files/2025-12/kvk-2025_taxonomie.zip",
+  "qualification": "not_qualified",
+  "rules_version": "KVK-RM-2025-10-31-errata-2026-02-12",
+  "dependencies": [
+    {
+      "package_file": "bw2-titel9-2025_taxonomie.zip",
+      "sha256": "d0cfb83e761b642303ed25bcbcf79f5d66feecd6a968f627407e2ca52e57a15e",
+      "source_url": "https://www.sbr-nl.nl/sites/default/files/2025-12/bw2-titel9-2025_taxonomie.zip"
+    },
+    {
+      "package_file": "ifrs-2024_taxonomie.zip",
+      "sha256": "46f62c4edd010e1b756ec759a9f33ec5d528567fd494e6eeca44cb2a8ea4e3f8",
+      "source_url": "https://www.sbr-nl.nl/sites/default/files/2025-12/ifrs-2024_taxonomie.zip"
+    },
+    {
+      "package_file": "ncgc-2025_taxonomie.zip",
+      "sha256": "54e782ee4c7b1287dc0211b3411649976250fb24ed34a5326d12a02f5b237d65",
+      "source_url": "https://www.sbr-nl.nl/sites/default/files/2025-12/ncgc-2025_taxonomie.zip"
+    },
+    {
+      "package_file": "rj-2025_taxonomie.zip",
+      "sha256": "88a4a6f8a07fb36468f2369164fcc0f0dc44e92e5f3f8b9ee071170726b6ed84",
+      "source_url": "https://www.sbr-nl.nl/sites/default/files/2025-12/rj-2025_taxonomie.zip"
+    },
+    {
+      "package_file": "wnt-2025_taxonomie.zip",
+      "sha256": "6151e822010cac5fbdee25b2ba7a6817d094517add3ba62e8078a8b9b9470a26",
+      "source_url": "https://www.sbr-nl.nl/sites/default/files/2025-12/2025-122/wnt-2025_taxonomie.zip"
+    },
+    {
+      "package_file": "ww-2025_taxonomie.zip",
+      "sha256": "e9eccb7df888bc800d6c1290d6326417ba6dcf635e3200129e53ce77e541e1d9",
+      "source_url": "https://www.sbr-nl.nl/sites/default/files/2025-12/2025-122/ww-2025_taxonomie.zip"
+    },
+    {
+      "package_file": "lei-taxonomy-REC-2020-07-02.zip",
+      "sha256": "e21b1a0a9fc663cb6406ef6cb93bc0790ce74c42b0132febee2fad4f62a195ed",
+      "source_url": "https://www.xbrl.org/taxonomy/int/lei/lei-taxonomy-REC-2020-07-02.zip"
+    },
+    {
+      "package_file": "xbrl-enumerations-support.zip",
+      "sha256": "215142e8b9fb9bc0512083eab7b1f40083b052dcaab7dd3ee9f9e4829464ef90",
+      "source_url": "https://xbrl.org/2020/extensible-enumerations-2.0.xsd",
+      "source_sha256": "17a021e3e3fd5ca2ff0cde05988c78f12a6cadd71077347e0ae4376a78b586e8",
+      "provenance": "Local taxonomy-package wrapper of unmodified official schema; not a publisher-supplied ZIP."
+    }
+  ],
+  "entry_points": {
+    "nlgaap": "www.nltaxonomie.nl/kvk/2025-12-31/kvk-annual-report-nlgaap-ext.xsd",
+    "ifrs": "www.nltaxonomie.nl/kvk/2025-12-31/kvk-annual-report-ifrs-ext.xsd"
+  },
+  "namespaces": {}
+}

@@ -116,7 +116,8 @@ def test_package_contains_rendered_source_and_schema_reference():
     with zipfile.ZipFile(BytesIO(data)) as archive:
         xml = archive.read('12345678-2026/reports/12345678-2026.xhtml')
         assert b'https://example.test/ep.xsd' in xml
-        assert b'<p>true</p>' in xml
+        assert b'>true</ix:nonNumeric></p>' in xml
+        assert b'Reviewed facts' not in xml
         assert b'<xbrli:xbrl>' not in xml
         assert not validate_xml(xml)
 

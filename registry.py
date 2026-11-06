@@ -117,6 +117,8 @@ class EnrichedTaxonomyRelease:
     # Taxonomy files discovered during parsing
     taxonomy_files: list[str] = field(default_factory=list)
     complete_entry_points: set[str] = field(default_factory=set)
+    dependency_paths: tuple[str, ...] = ()
+    dependency_checksums: dict[str, str] = field(default_factory=dict)
 
     def entry_point(self, key: str) -> str:
         if self.status != "final":

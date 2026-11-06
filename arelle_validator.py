@@ -17,8 +17,16 @@ def capabilities():
         config = Path(arelle.__file__).parent / "plugin/validate/NL/resources/config.xml"
         root = etree.parse(str(config), etree.XMLParser(resolve_entities=False, no_network=True))
         profiles = [node.get("names").split("|")[0] for node in root.findall("DisclosureSystem")]
+        # Reading config.xml alone does not prove the optional plug-in imports.
+        import importlib
+        try:
+            importlib.import_module("arelle.plugin.validate.NL")
+            plugin_error = None
+        except ImportError as exc:
+            profiles = []
+            plugin_error = str(exc)
         return {"installed": True, "version": version("arelle-release"), "profiles": profiles,
-                "filing_approval": False}
+                "filing_approval": False, "plugin_error": plugin_error}
     except (ImportError, PackageNotFoundError, OSError):
         return {"installed": False, "version": None, "profiles": [], "filing_approval": False}
 
@@ -32,6 +40,8 @@ def diagnose(payload: bytes, *, suffix=".xhtml", packages=(), profile=None, time
     info = capabilities()
     result = {"engine": info, "sha256": sha256(payload).hexdigest(), "profile": profile,
               "technical_valid": False, "suitable_for_filing": False, "messages": []}
+    from reporting_profile import RULES_2025
+    result["rules_version"] = RULES_2025 if profile == "NL-INLINE-2025" else None
     if not info["installed"]:
         result["messages"] = [{"code": "ENGINE_MISSING", "message": "Install app/requirements-validator.txt."}]
         return result
@@ -51,6 +61,7 @@ def diagnose(payload: bytes, *, suffix=".xhtml", packages=(), profile=None, time
         except etree.XMLSyntaxError:
             pass  # Arelle returns the detailed parse failure.
     paths = [Path(p).resolve(strict=True) for p in packages]
+    result["package_checksums"] = {str(p): sha256(p.read_bytes()).hexdigest() for p in paths}
     if any("|" in str(p) for p in paths):
         raise ValueError("Package paths cannot contain |.")
     with TemporaryDirectory(prefix="kvk-arelle-") as folder:
@@ -59,21 +70,42 @@ def diagnose(payload: bytes, *, suffix=".xhtml", packages=(), profile=None, time
         report.write_bytes(payload)
         log = root / "validation.json"
         command = [sys.executable, "-m", "arelle.CntlrCmdLine", "--file", str(report),
-                   "--validate", "--validationExitCode", "--formula", "run",
+                   "--validate", "--validationExitCode",
                    "--formulaUnsatisfiedAsserError", "--calc", "c10",
                    "--internetConnectivity", "offline", "--xdgConfigHome", str(root / "config"),
                    "--logFile", str(log), "--logLevel", "INFO"]
+        evidence_plugin = Path(__file__).with_name("validation_evidence_plugin.py")
+        result["evidence_plugin_sha256"] = sha256(evidence_plugin.read_bytes()).hexdigest()
+        plugins = [str(evidence_plugin)]
         if paths:
             command += ["--packages", "|".join(map(str, paths))]
         if profile:
-            command += ["--plugins", "validate/NL", "--disclosureSystem", profile]
+            plugins.append("validate/NL")
+            command += ["--disclosureSystem", profile]
+        command += ["--plugins", "|".join(plugins)]
         try:
             run = subprocess.run(command, capture_output=True, timeout=timeout, check=False)
             messages = json.loads(log.read_text())["log"]
             result["messages"] = messages
+            result["exit_code"] = run.returncode
             completed = any("validated in" in m.get("message", {}).get("text", "") for m in messages)
+            result["completed"] = completed
+            result["engine_failure"] = any(
+                "[Exception]" in str(m.get("message", "")) or
+                m.get("code") in {"arelle:pluginLoadingError", "arelle:disclosureSystemName"}
+                for m in messages)
             errors = any(m.get("level", "").lower() in ("error", "critical", "fatal") for m in messages)
-            result["technical_valid"] = run.returncode == 0 and completed and not errors
+            evidence = []
+            for m in messages:
+                if m.get("code") == "KVK.validationEvidence":
+                    # addToLog includes a decorated text and the raw format args.
+                    raw = m.get("message", {}).get("text", "")
+                    start, end = raw.find('{'), raw.rfind('}')
+                    evidence.append(json.loads(raw[start:end + 1]))
+            result["assertion_evidence"] = evidence
+            clean_evidence = bool(evidence) and all(not e["errors"] and not e["controller_errors"] for e in evidence)
+            assertion_only_exit = (run.returncode == 3 and clean_evidence and any(e["assertions"] for e in evidence))
+            result["technical_valid"] = (run.returncode == 0 or assertion_only_exit) and completed and not errors and not result["engine_failure"] and clean_evidence
             if not completed:
                 messages.append({"code": "VALIDATION_INCOMPLETE", "message": "No completed validation was recorded."})
         except subprocess.TimeoutExpired:

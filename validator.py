@@ -49,6 +49,14 @@ def validate_snapshot(
     Returns a (possibly empty) list of ValidationIssue objects.
     """
     issues: list[ValidationIssue] = []
+    from accounting_controls import duplicate_issues
+    issues.extend(duplicate_issues(snapshot))
+    if snapshot.profile_id:
+        from reporting_profile import check_profile
+        try:
+            check_profile(snapshot, taxonomy)
+        except ValueError as exc:
+            issues.append(ValidationIssue("PROFILE", str(exc)))
     try:
         taxonomy.entry_point(snapshot.entry_point_key)
     except ValueError as exc:
@@ -373,29 +381,13 @@ def _check_calculations(
     taxonomy: "TaxonomyRelease | EnrichedTaxonomyRelease",
 ) -> list[ValidationIssue]:
     """G: Calculation linkbase — parent should equal weighted sum of children."""
-    issues: list[ValidationIssue] = []
-    from registry import EnrichedTaxonomyRelease
-    if not isinstance(taxonomy, EnrichedTaxonomyRelease):
-        return issues
-
-    facts = {(f.qname, f.context_id, f.unit_id): f for f in snap.facts
-             if f.kind == "numeric" and not f.nil and isinstance(f.value, Decimal) and f.value.is_finite()}
-    networks = {}
-    for concept in taxonomy.get_concepts_for_ep(snap.entry_point_key):
-        for arc in concept.calc_relationships:
-            networks.setdefault((arc.link_role, arc.parent_qname), {})[arc.child_qname] = Decimal(str(arc.weight))
-    for (role, parent), children in networks.items():
-        for (qname, context, unit), parent_fact in facts.items():
-            if qname != parent:
-                continue
-            child_facts = [(facts.get((child, context, unit)), weight) for child, weight in children.items()]
-            if not child_facts or any(f is None for f, _ in child_facts):
-                continue
-            total = sum((f.value * weight for f, weight in child_facts), Decimal(0))
-            tolerance = Decimal(5).scaleb(-(parent_fact.decimals or 0) - 1)
-            tolerance += sum((abs(weight) * Decimal(5).scaleb(-(f.decimals or 0) - 1) for f, weight in child_facts), Decimal(0))
-            if abs(parent_fact.value - total) > tolerance:
-                issues.append(ValidationIssue("CALC-001", f"Parent {parent_fact.value} differs from weighted sum {total}.", parent, rule_ref=role))
+    from accounting_controls import taxonomy_reconciliations
+    issues = []
+    for record in taxonomy_reconciliations(snap, taxonomy):
+        if record["status"] == "error":
+            issues.append(ValidationIssue("CALC-001", f"Calculation difference {record['difference']} exceeds tolerance {record['tolerance']}.", rule_ref=record["rule_id"]))
+        elif record["status"] == "rounding_review":
+            issues.append(ValidationIssue("CALC-ROUNDING", f"Rounding difference {record['difference']} within tolerance {record['tolerance']}; review required.", severity="warning", rule_ref=record["rule_id"]))
     return issues
 
 

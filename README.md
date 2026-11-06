@@ -55,3 +55,7 @@ Suggest tags for document scans table amounts using Dutch/English taxonomy label
 See [update and rollout requirements](docs/UPDATE_2026-10-25.md) before deploying this version. Cloud storage now requires `supabase_security_migration.sql` and explicit ownership of existing filings. Writes fail if durable storage is unavailable; there is no memory-only success fallback. For local development, explicitly configure `KVK_LOCAL_DATA_DIR` (durable SQLite, unavailable in production) and hashed local accounts. The older file-persistence descriptions above are historical.
 
 The workspace now provides English-first guidance, bilingual profile terminology, explicit financial-year entry and saved-filing selection. Taxonomy updates are checksum-isolated. Review [taxonomy qualification status](docs/TAXONOMY_QUALIFICATION.md) before enabling any production release. No live submission integration is connected.
+
+## 2025 audit-review delivery work (6 November 2026)
+
+Official 2025 packages, profile/version pinning, explicit source scale, source-aligned tags, accounting review evidence and an audit-bundle API have been added. The 2025 route remains blocked pending extension generation, comprehensive accounting controls and full conformance qualification. See [execution status and remaining acceptance gates](docs/DELIVERY_EXECUTION_2026-11-06.md). The earlier description of an appended reviewed-facts table is superseded by source-aligned rendering.

@@ -932,3 +932,203 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,su
 .expert-tools summary {cursor:pointer;padding:8px;}
 .expert-menu {position:absolute;top:100%;right:0;display:flex;flex-direction:column;min-width:230px;background:white;border:1px solid #cbd5e1;border-radius:8px;padding:8px;z-index:30;box-shadow:0 8px 24px #0f172a22;}
 #entityModal .modal-card {width:780px;}
+
+/* ── Multi-Company & Client Directory ────────────────────────────────────────── */
+.company-switcher-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #1e293b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 0.75rem;
+}
+.company-switcher-pill:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+.company-switcher-icon { font-size: 0.95rem; }
+.company-switcher-name { max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.company-switcher-year {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid #bfdbfe;
+}
+.company-switcher-arrow { color: #64748b; font-size: 0.75rem; }
+
+.company-hub-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+.company-hub-toolbar .search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 12px;
+  flex: 1;
+}
+.company-hub-toolbar .search-box input {
+  border: none;
+  outline: none;
+  width: 100%;
+  font-size: 0.85rem;
+  background: transparent;
+}
+.company-list-container {
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding-right: 4px;
+}
+.company-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.company-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+.company-card.active-company {
+  border-color: #3b82f6;
+  background: #fafcff;
+}
+.company-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.company-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.company-card-title strong {
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+.company-meta {
+  font-size: 0.75rem;
+  color: #64748b;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.company-kvk-pill {
+  font-family: var(--font-mono);
+  background: #f1f5f9;
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: #334155;
+}
+.company-filings-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #f1f5f9;
+}
+.filing-year-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.filing-year-badge:hover {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+}
+.filing-year-badge.current-active {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+.filing-year-badge .badge-status {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #e2e8f0;
+  color: #475569;
+}
+.filing-year-badge.current-active .badge-status {
+  background: rgba(255,255,255,0.25);
+  color: #ffffff;
+}
+.filing-year-badge .badge-status.draft { background: #fef3c7; color: #92400e; }
+.filing-year-badge .badge-status.frozen { background: #dbeafe; color: #1e40af; }
+.filing-year-badge .badge-status.validated { background: #dcfce7; color: #166534; }
+
+.rollover-btn-small {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: all 0.15s ease;
+}
+.rollover-btn-small:hover {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+/* Rollover Modal */
+.rollover-summary-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.rollover-summary-box .summary-row {
+  display: flex;
+  justify-content: space-between;
+}
+.rollover-summary-box .highlight-year {
+  font-weight: 700;
+  color: #2563eb;
+  font-size: 1rem;
+}

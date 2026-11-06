@@ -6,7 +6,7 @@ Checked against official SBR publications on 25 October 2026. This register is n
 |---|---|---|
 | NT21_KVK_20261209.b | Predefined NT21 profiles, reporting year 2026 | Bundled beta; preparation only. Not qualified for this application's iXBRL filing route. |
 | NTiXBRL_KVK_20261231.a | Separate 2026 iXBRL family | Announced 22 October; candidate for development assessment only. Not installed or activated. |
-| KVK iXBRL 2025, version 31 December 2025 | Supported-year candidate for production qualification | Official final packages/examples exist; not installed or qualified in this application. |
+| KVK iXBRL 2025, version 31 December 2025 | Supported-year candidate for production qualification | Installed with recorded hashes on 6 November 2026; NL-GAAP resolves offline. Two official smoke cases pass; full qualification and 2025 export remain blocked. See DELIVERY_EXECUTION_2026-11-06.md. |
 
 Sources: [2026 alpha announcement](https://www.sbr-nl.nl/alfaversie-van-ntixbrlkvk20261231-gepubliceerd), [2026 packages](https://www.sbr-nl.nl/sbr-domeinen/handelsregister/documentatie-boekjaar-2026), [2025 packages and conformance suite](https://www.sbr-nl.nl/sbr-domeinen/handelsregister/documentatie-boekjaar-2025-kvk), [release calendar](https://www.sbr-nl.nl/werken-met-sbr/taxonomie/releasekalender).
 

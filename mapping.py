@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from docx_extract import ExtractedDocument
@@ -23,6 +23,9 @@ class MappingDecision:
     unit_id: str | None = None
     decimals: int | None = None
     reviewer: str | None = None
+    scale: int = 0
+    sign: str | None = None
+    number_format: str = "en"
 
 
 def fact_from_decision(document: ExtractedDocument, decision: MappingDecision) -> Fact:
@@ -40,8 +43,10 @@ def fact_from_decision(document: ExtractedDocument, decision: MappingDecision) -
     return Fact(
         id="fact-" + sha256(identity.encode()).hexdigest()[:32], qname=decision.qname,
         context_id=decision.context_id, value=value, kind=decision.kind,  # type: ignore[arg-type]
-        source=SourceRef(document.sha256, decision.source_location, extracted, decision.reviewer.strip()),
+        source=SourceRef(document.sha256, decision.source_location, extracted, decision.reviewer.strip(),
+                         datetime.now(timezone.utc).isoformat()),
         unit_id=decision.unit_id, decimals=decision.decimals,
+        scale=decision.scale, sign=decision.sign, number_format=decision.number_format,
     )
 
 

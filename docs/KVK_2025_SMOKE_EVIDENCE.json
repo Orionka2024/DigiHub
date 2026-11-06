@@ -1,0 +1,54 @@
+{
+  "suite_sha256": "8e82b2a73acd307a960bd3e15ec8e349a4d940d8ea11c67cf30baa6aff4151f5",
+  "rules_version": "KVK-RM-2025-10-31-errata-2026-02-12",
+  "engine": {
+    "installed": true,
+    "version": "2.45.0",
+    "profiles": [
+      "NL-INLINE-2025",
+      "NL-INLINE-2025-GAAP-OTHER-PREVIEW",
+      "NL-INLINE-2024",
+      "NL-INLINE-2024-GAAP-OTHER",
+      "NL-INLINE-MULTI-TARGET",
+      "NT20",
+      "NT19",
+      "NT18",
+      "NT17",
+      "NT16"
+    ],
+    "filing_approval": false,
+    "plugin_error": null
+  },
+  "profile": "NL-INLINE-2025",
+  "qualified": false,
+  "package_checksums": {
+    "bw2-titel9-2025_taxonomie.zip": "d0cfb83e761b642303ed25bcbcf79f5d66feecd6a968f627407e2ca52e57a15e",
+    "ifrs-2024_taxonomie.zip": "46f62c4edd010e1b756ec759a9f33ec5d528567fd494e6eeca44cb2a8ea4e3f8",
+    "kvk-2025_taxonomie.zip": "99209668da05505f1225015f60c466dbebadb488f9c3925eae2579f0269f9619",
+    "lei-taxonomy-REC-2020-07-02.zip": "e21b1a0a9fc663cb6406ef6cb93bc0790ce74c42b0132febee2fad4f62a195ed",
+    "ncgc-2025_taxonomie.zip": "54e782ee4c7b1287dc0211b3411649976250fb24ed34a5326d12a02f5b237d65",
+    "rj-2025_taxonomie.zip": "88a4a6f8a07fb36468f2369164fcc0f0dc44e92e5f3f8b9ee071170726b6ed84",
+    "wnt-2025_taxonomie.zip": "6151e822010cac5fbdee25b2ba7a6817d094517add3ba62e8078a8b9b9470a26",
+    "ww-2025_taxonomie.zip": "e9eccb7df888bc800d6c1290d6326417ba6dcf635e3200129e53ce77e541e1d9",
+    "xbrl-enumerations-support.zip": "215142e8b9fb9bc0512083eab7b1f40083b052dcaab7dd3ee9f9e4829464ef90"
+  },
+  "total_cases": 237,
+  "executed_cases": 2,
+  "all_automated_cases_passed": false,
+  "cases": [
+    {
+      "id": "G3-1-2_1/TC1_valid",
+      "expected_valid": true,
+      "expected_errors": [],
+      "status": "pass"
+    },
+    {
+      "id": "G3-1-2_1/TC2_invalid",
+      "expected_valid": false,
+      "expected_errors": [
+        "periodWithTimeContent"
+      ],
+      "status": "pass"
+    }
+  ]
+}
