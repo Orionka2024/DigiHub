@@ -78,6 +78,8 @@ def _snapshot_to_dict(s: FilingSnapshot) -> dict:
         "approval_date": s.approval_date.isoformat() if s.approval_date else None,
         "report_sections": list(s.report_sections),
         "reviewed_requirement_ids": list(s.reviewed_requirement_ids),
+        "rollover_from_filing_id": s.rollover_from_filing_id,
+        "template_concepts": list(s.template_concepts),
         "facts": [
             {
                 "id": f.id, "qname": f.qname, "context_id": f.context_id,
@@ -169,6 +171,8 @@ def _snapshot_from_dict(data: dict) -> FilingSnapshot:
         is_final=data.get("is_final", False),
         signatory_name=data.get("signatory_name"),
         approval_date=date.fromisoformat(data["approval_date"]) if data.get("approval_date") else None,
+        rollover_from_filing_id=data.get("rollover_from_filing_id"),
+        template_concepts=list(data.get("template_concepts", [])),
     )
     if snap.state in (FilingState.FROZEN, FilingState.VALIDATED):
         if not snap.frozen_digest or "taxonomy_version" not in data:
@@ -446,6 +450,24 @@ class WorkspaceStore:
 
     def all_ids(self):
         return [key for key,_,_ in self._rows("filing")]
+
+    def delete_filing(self, filing_id: str) -> bool:
+        owner = self._actor()
+        rows = self._rows("filing", filing_id)
+        if not rows:
+            raise KeyError("Filing unavailable.")
+        if self.local_dir:
+            with self._db() as db:
+                db.execute("DELETE FROM records WHERE kind='filing' AND key=? AND owner=?", (filing_id, owner))
+        else:
+            table, keyfield, ownerfield, _ = self._fields("filing")
+            self._sb().table(table).delete().eq(keyfield, filing_id).eq(ownerfield, owner).execute()
+
+        self._snapshots.pop(filing_id, None)
+        versions = dict(read_versions.get() or {})
+        versions.pop((owner, "filing", filing_id), None)
+        read_versions.set(versions)
+        return True
 
     def add_document(self, document):
         self._documents[document.sha256] = document

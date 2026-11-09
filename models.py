@@ -127,6 +127,8 @@ class FilingSnapshot:
     dependency_checksums: dict[str, str] = field(default_factory=dict)
     rules_version: str = ""
     warning_dispositions: list[dict] = field(default_factory=list)
+    rollover_from_filing_id: str | None = None
+    template_concepts: list[str] = field(default_factory=list)
 
     def review_digest(self) -> str:
         """Bind warning decisions to content, excluding the decisions themselves."""

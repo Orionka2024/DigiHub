@@ -202,6 +202,150 @@ _PROFILES: dict[str, ReportingProfile] = {
         description_en="EU-endorsed IFRS consolidated statements with Title 9 Part 9 disclosures.",
         description_nl="Geconsolideerde jaarrekening conform door de EU goedgekeurde IFRS."
     ),
+
+    # ---------------------------------------------------------------------------
+    # Supported 2026 Profile Catalog (NT21)
+    # ---------------------------------------------------------------------------
+    "2026-nlgaap-micro-general-standalone": ReportingProfile(
+        id="2026-nlgaap-micro-general-standalone",
+        name="Micro company — NL-GAAP (Standalone)",
+        name_en="Micro company — NL-GAAP (Standalone)",
+        name_nl="Micro-onderneming — NL-GAAP (Enkelvoudig)",
+        financial_year=2026,
+        framework="nlgaap",
+        company_size="micro",
+        sector="general",
+        scope="standalone",
+        legal_basis="Burgerlijk Wetboek Boek 2, Art. 2:395a BW (Micro regime)",
+        taxonomy_id="NT21_KVK_20261209_b",
+        taxonomy_version="20261209.b",
+        rules_version="NT21-KVK-2026-08-13-v1_1",
+        entry_point_key="micro_nlgaap",
+        qualification="candidate",
+        is_production_supported=True,
+        description_en="Abbreviated balance sheet and minimal explanatory notes for micro companies (NT21).",
+        description_nl="Verkorte balans en minimale toelichting voor micro-ondernemingen (NT21)."
+    ),
+    "2026-nlgaap-klein-general-standalone": ReportingProfile(
+        id="2026-nlgaap-klein-general-standalone",
+        name="Small company — NL-GAAP (Standalone)",
+        name_en="Small company — NL-GAAP (Standalone)",
+        name_nl="Kleine rechtspersoon — NL-GAAP (Enkelvoudig)",
+        financial_year=2026,
+        framework="nlgaap",
+        company_size="klein",
+        sector="general",
+        scope="standalone",
+        legal_basis="Burgerlijk Wetboek Boek 2, Art. 2:396 BW (Small company regime)",
+        taxonomy_id="NT21_KVK_20261209_b",
+        taxonomy_version="20261209.b",
+        rules_version="NT21-KVK-2026-08-13-v1_1",
+        entry_point_key="klein_nlgaap",
+        qualification="candidate",
+        is_production_supported=True,
+        description_en="Condensed balance sheet and notes under Title 9 Book 2 Dutch Civil Code (NT21).",
+        description_nl="Verkorte balans en toelichting conform Titel 9 Boek 2 BW (NT21)."
+    ),
+    "2026-nlgaap-middelgroot-general-standalone": ReportingProfile(
+        id="2026-nlgaap-middelgroot-general-standalone",
+        name="Medium-sized company — NL-GAAP (Standalone)",
+        name_en="Medium-sized company — NL-GAAP (Standalone)",
+        name_nl="Middelgrote rechtspersoon — NL-GAAP (Enkelvoudig)",
+        financial_year=2026,
+        framework="nlgaap",
+        company_size="middelgroot",
+        sector="general",
+        scope="standalone",
+        legal_basis="Burgerlijk Wetboek Boek 2, Art. 2:397 BW",
+        taxonomy_id="NT21_KVK_20261209_b",
+        taxonomy_version="20261209.b",
+        rules_version="NT21-KVK-2026-08-13-v1_1",
+        entry_point_key="middelgroot_nlgaap",
+        qualification="candidate",
+        is_production_supported=True,
+        description_en="Balance sheet, simplified profit and loss account, notes and management report (NT21).",
+        description_nl="Balans, vereenvoudigde winst-en-verliesrekening, toelichting en bestuursverslag (NT21)."
+    ),
+    "2026-nlgaap-middelgroot-general-consolidated": ReportingProfile(
+        id="2026-nlgaap-middelgroot-general-consolidated",
+        name="Medium-sized company — NL-GAAP (Consolidated)",
+        name_en="Medium-sized company — NL-GAAP (Consolidated)",
+        name_nl="Middelgrote rechtspersoon — NL-GAAP (Geconsolideerd)",
+        financial_year=2026,
+        framework="nlgaap",
+        company_size="middelgroot",
+        sector="general",
+        scope="consolidated",
+        legal_basis="Burgerlijk Wetboek Boek 2, Art. 2:406 BW",
+        taxonomy_id="NT21_KVK_20261209_b",
+        taxonomy_version="20261209.b",
+        rules_version="NT21-KVK-2026-08-13-v1_1",
+        entry_point_key="middelgroot_nlgaap",
+        qualification="candidate",
+        is_production_supported=True,
+        description_en="Consolidated annual report for medium-sized group entities (NT21).",
+        description_nl="Geconsolideerde jaarrekening voor middelgrote groepsentiteiten (NT21)."
+    ),
+    "2026-nlgaap-groot-general-standalone": ReportingProfile(
+        id="2026-nlgaap-groot-general-standalone",
+        name="Large company — NL-GAAP (Standalone)",
+        name_en="Large company — NL-GAAP (Standalone)",
+        name_nl="Grote rechtspersoon — NL-GAAP (Enkelvoudig)",
+        financial_year=2026,
+        framework="nlgaap",
+        company_size="groot",
+        sector="general",
+        scope="standalone",
+        legal_basis="Burgerlijk Wetboek Boek 2 Titel 9",
+        taxonomy_id="NT21_KVK_20261209_b",
+        taxonomy_version="20261209.b",
+        rules_version="NT21-KVK-2026-08-13-v1_1",
+        entry_point_key="groot_nlgaap",
+        qualification="candidate",
+        is_production_supported=True,
+        description_en="Full statutory financial statements under Dutch GAAP (NT21).",
+        description_nl="Volledige jaarrekening conform NL-GAAP (NT21)."
+    ),
+    "2026-nlgaap-groot-general-consolidated": ReportingProfile(
+        id="2026-nlgaap-groot-general-consolidated",
+        name="Large company — NL-GAAP (Consolidated)",
+        name_en="Large company — NL-GAAP (Consolidated)",
+        name_nl="Grote rechtspersoon — NL-GAAP (Geconsolideerd)",
+        financial_year=2026,
+        framework="nlgaap",
+        company_size="groot",
+        sector="general",
+        scope="consolidated",
+        legal_basis="Burgerlijk Wetboek Boek 2 Titel 9 & Art. 2:406 BW",
+        taxonomy_id="NT21_KVK_20261209_b",
+        taxonomy_version="20261209.b",
+        rules_version="NT21-KVK-2026-08-13-v1_1",
+        entry_point_key="groot_nlgaap",
+        qualification="candidate",
+        is_production_supported=True,
+        description_en="Full consolidated financial statements under Dutch GAAP for large groups (NT21).",
+        description_nl="Volledige geconsolideerde jaarrekening onder NL-GAAP voor grote groepen (NT21)."
+    ),
+    "2026-ifrs-groot-general-consolidated": ReportingProfile(
+        id="2026-ifrs-groot-general-consolidated",
+        name="Large company — EU-IFRS (Consolidated)",
+        name_en="Large company — EU-IFRS (Consolidated)",
+        name_nl="Grote rechtspersoon — EU-IFRS (Geconsolideerd)",
+        financial_year=2026,
+        framework="ifrs",
+        company_size="groot",
+        sector="general",
+        scope="consolidated",
+        legal_basis="Burgerlijk Wetboek Boek 2, Art. 2:362 lid 8 / IAS Regulation (EC) 1606/2002",
+        taxonomy_id="NT21_KVK_20261209_b",
+        taxonomy_version="20261209.b",
+        rules_version="NT21-KVK-2026-08-13-v1_1",
+        entry_point_key="ifrs",
+        qualification="candidate",
+        is_production_supported=True,
+        description_en="EU-endorsed IFRS consolidated statements with Title 9 Part 9 disclosures (NT21).",
+        description_nl="Geconsolideerde jaarrekening conform door de EU goedgekeurde IFRS (NT21)."
+    ),
 }
 
 
@@ -212,8 +356,8 @@ def get_profile(profile_id: str) -> ReportingProfile:
     if match:
         year_str, framework, size, sector, scope = match.groups()
         year = int(year_str)
-        if year != 2025:
-            raise ValueError(f"Unsupported profile: reporting year {year} is not in the initial supported scope.")
+        if year not in (2025, 2026):
+            raise ValueError(f"Unsupported profile: reporting year {year} is not in the supported scope.")
         if size == "micro" and framework == "ifrs":
             raise ValueError("Unsupported profile: Micro companies cannot report under IFRS.")
         if size == "micro" and scope in ("consolidated", "both"):

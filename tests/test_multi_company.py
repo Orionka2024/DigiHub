@@ -95,3 +95,92 @@ def test_yearly_rollover_workflow(api):
     assert rolled_fact["context_id"] == "ctx_instant_prior"
     assert rolled_fact["value"] == "50000"
     assert rolled_fact["scale"] == 3
+
+
+def test_delete_draft_filing(api):
+    client, main = api
+    s = snapshot()
+    s.filing_id = "draft-to-delete"
+    s.kvk_number = "99887766"
+    s.entity_name = "Deletable B.V."
+    main.store.add(s)
+
+    # Verify present
+    resp = client.get("/api/companies")
+    assert any(c["kvk_number"] == "99887766" for c in resp.json()["companies"])
+
+    # Delete the draft
+    del_resp = client.delete(f"/api/filings/{s.filing_id}")
+    assert del_resp.status_code == 200
+    assert del_resp.json()["ok"] is True
+    assert del_resp.json()["filing_id"] == s.filing_id
+
+    # Verify removed from companies list
+    resp2 = client.get("/api/companies")
+    assert not any(c["kvk_number"] == "99887766" for c in resp2.json()["companies"])
+
+    # Attempting to delete again returns 404
+    del_resp2 = client.delete(f"/api/filings/{s.filing_id}")
+    assert del_resp2.status_code == 404
+
+
+def test_rollover_2025_to_2026_with_nt21_and_template_memories(api):
+    client, main = api
+    s25 = snapshot()
+    s25.filing_id = "f-2025-approved"
+    s25.kvk_number = "34254022"
+    s25.entity_name = "Test Company 34254022 B.V."
+    s25.period_start = date(2025, 1, 1)
+    s25.period_end = date(2025, 12, 31)
+    s25.profile_id = "2025-nlgaap-klein-general-standalone"
+    s25.taxonomy_id = "KVK_IXBRL_2025"
+    s25.entry_point_key = "nlgaap"
+    s25.units = [Unit("eur", "iso4217:EUR")]
+    s25.contexts = [
+        Context("ctx_current", "http://www.kvk.nl/kvk-id", "34254022", start_date=date(2025, 1, 1), end_date=date(2025, 12, 31)),
+        Context("ctx_instant_end", "http://www.kvk.nl/kvk-id", "34254022", instant=date(2025, 12, 31))
+    ]
+    s25.facts = [
+        Fact("f-bs", "kvk-i:Assets", "ctx_instant_end", Decimal("75000"), "numeric",
+             SourceRef(s25.document_sha256, "Balance Sheet", "75000", "accountant"), "eur", -3, scale=3),
+        Fact("f-pl", "kvk-i:NetTurnover", "ctx_current", Decimal("120000"), "numeric",
+             SourceRef(s25.document_sha256, "P&L", "120000", "accountant"), "eur", -3, scale=3)
+    ]
+    main.store.add(s25)
+
+    # Rollover to FY 2026
+    resp = client.post("/api/company/rollover", json={
+        "source_filing_id": "f-2025-approved",
+        "target_year": 2026,
+        "carry_over_comparatives": True
+    })
+    assert resp.status_code == 201
+    f26 = resp.json()
+
+    # 2026 profile should use NT21 taxonomy rules and 2026 profile
+    assert f26["profile_id"] == "2026-nlgaap-klein-general-standalone"
+    assert f26["taxonomy_id"] == "NT21_KVK_20261209_b"
+    assert f26["entry_point_key"] == "klein_nlgaap"
+    assert f26["period_start"] == "2026-01-01"
+    assert f26["period_end"] == "2026-12-31"
+    assert f26["rollover_from_filing_id"] == "f-2025-approved"
+    assert "kvk-i:Assets" in f26["template_concepts"]
+    assert "kvk-i:NetTurnover" in f26["template_concepts"]
+
+    # Both balance sheet and P&L comparatives carried over
+    assert len(f26["facts"]) == 2
+    facts_by_ctx = {f["context_id"]: f for f in f26["facts"]}
+    assert "ctx_instant_prior" in facts_by_ctx
+    assert facts_by_ctx["ctx_instant_prior"]["value"] == "75000"
+    assert "ctx_prior" in facts_by_ctx
+    assert facts_by_ctx["ctx_prior"]["value"] == "120000"
+
+    # User can attach new 2026 document to the draft filing
+    new_doc = document()
+    main.store.add_document(new_doc)
+    doc_resp = client.put(f"/api/snapshot/{f26['filing_id']}/document", json={
+        "document_sha256": new_doc.sha256
+    })
+    assert doc_resp.status_code == 200
+    assert doc_resp.json()["document_sha256"] == new_doc.sha256
+

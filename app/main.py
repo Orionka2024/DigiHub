@@ -661,6 +661,8 @@ def _snap_out(snap: FilingSnapshot, warnings: list[str] | None = None) -> Snapsh
         report_sections=list(snap.report_sections),
         reviewed_requirement_ids=list(snap.reviewed_requirement_ids),
         warnings=warnings or [],
+        rollover_from_filing_id=snap.rollover_from_filing_id,
+        template_concepts=list(snap.template_concepts),
     )
 
 
@@ -1138,6 +1140,8 @@ async def rollover_company(payload: RolloverIn) -> SnapshotOut:
     new_profile_id = source_snap.profile_id
     new_taxonomy_id = source_snap.taxonomy_id
     new_entry_point = source_snap.entry_point_key
+    new_taxonomy_version = source_snap.taxonomy_version
+    new_rules_version = source_snap.rules_version
 
     if new_profile_id:
         try:
@@ -1147,6 +1151,8 @@ async def rollover_company(payload: RolloverIn) -> SnapshotOut:
             new_profile_id = matched.id
             new_taxonomy_id = matched.taxonomy_id
             new_entry_point = matched.entry_point_key
+            new_taxonomy_version = matched.taxonomy_version
+            new_rules_version = matched.rules_version
         except Exception:
             pass
 
@@ -1167,10 +1173,15 @@ async def rollover_company(payload: RolloverIn) -> SnapshotOut:
     new_facts = []
     if payload.carry_over_comparatives:
         for f in source_snap.facts:
+            target_ctx = None
             if f.context_id == "ctx_instant_end":
+                target_ctx = "ctx_instant_prior"
+            elif f.context_id in ("ctx_current", "ctx_duration"):
+                target_ctx = "ctx_prior"
+            if target_ctx:
                 new_fact_id = f"rollover-{uuid.uuid4().hex[:12]}"
                 new_facts.append(Fact(
-                    id=new_fact_id, qname=f.qname, context_id="ctx_instant_prior",
+                    id=new_fact_id, qname=f.qname, context_id=target_ctx,
                     value=f.value, kind=f.kind, nil=f.nil,
                     source=SourceRef(
                         document_sha256=source_snap.document_sha256,
@@ -1183,6 +1194,8 @@ async def rollover_company(payload: RolloverIn) -> SnapshotOut:
                     number_format=f.number_format
                 ))
 
+    template_concepts = sorted({f.qname for f in source_snap.facts if f.qname})
+
     new_filing_id = str(uuid.uuid4())
     new_snap = FilingSnapshot(
         filing_id=new_filing_id,
@@ -1194,15 +1207,47 @@ async def rollover_company(payload: RolloverIn) -> SnapshotOut:
         entry_point_key=new_entry_point,
         document_sha256=source_snap.document_sha256,
         profile_id=new_profile_id,
-        taxonomy_version=source_snap.taxonomy_version,
+        taxonomy_version=new_taxonomy_version,
         taxonomy_sha256=source_snap.taxonomy_sha256,
-        rules_version=source_snap.rules_version,
+        rules_version=new_rules_version,
         contexts=new_contexts,
         units=new_units,
         facts=new_facts,
+        rollover_from_filing_id=source_snap.filing_id,
+        template_concepts=template_concepts,
     )
     store.add(new_snap)
     return _snap_out(new_snap)
+
+
+@app.delete("/api/filings/{filing_id}")
+@app.delete("/api/snapshot/{filing_id}")
+async def delete_filing_endpoint(filing_id: str):
+    """Delete a draft filing."""
+    try:
+        snap = store.get(filing_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Filing not found.")
+    store.delete_filing(filing_id)
+    return {"ok": True, "filing_id": filing_id, "entity_name": snap.entity_name}
+
+
+@app.put("/api/snapshot/{filing_id}/document", response_model=SnapshotOut)
+async def update_snapshot_document(filing_id: str, payload: dict) -> SnapshotOut:
+    """Attach or update the source document on a draft filing (e.g. for yearly rollover or revised statement)."""
+    doc_sha = payload.get("document_sha256")
+    if not doc_sha:
+        raise HTTPException(status_code=422, detail="document_sha256 is required.")
+    try:
+        snap = store.get(filing_id)
+        if snap.state != FilingState.DRAFT:
+            raise HTTPException(status_code=409, detail="Only draft filings can update their source document.")
+        store.get_document(doc_sha)
+        snap.document_sha256 = doc_sha
+        store.update(snap)
+        return _snap_out(snap)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 # ── Workspace save / load ──────────────────────────────────────────────────────

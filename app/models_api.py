@@ -181,6 +181,8 @@ class SnapshotOut(BaseModel):
     is_final: bool = False
     signatory_name: str | None = None
     approval_date: date | None = None
+    rollover_from_filing_id: str | None = None
+    template_concepts: list[str] = Field(default_factory=list)
 
 
 class FreezeIn(BaseModel):

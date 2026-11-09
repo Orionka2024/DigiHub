@@ -43,6 +43,12 @@
     <div class="ribbon-center" id="navStatus" role="status" aria-live="polite">Ready</div>
 
     <div class="ribbon-right">
+      <!-- Dashboard / Overview -->
+      <button class="ribbon-btn" onclick="workspace.toggleDashboardView()" id="btnViewToggle" title="Toggle Welcome Dashboard and First Page">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span id="btnViewToggleLabel">Dashboard</span>
+      </button>
+
       <!-- Clients directory -->
       <button class="ribbon-btn" onclick="workspace.openCompanyHub()" id="btnCompanyHub" title="Client Companies Directory">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M3 7v14M21 7v14M6 10h2M6 14h2M6 18h2M11 10h2M11 14h2M11 18h2M16 10h2M16 14h2M16 18h2M9 3h6v4H9z"/></svg>
@@ -124,8 +130,93 @@
     <div id="sourceWarnings" role="status" class="help-text"></div>
     <div class="journey-actions"><button class="btn-primary" id="nextStep" onclick="workspace.nextStep()">Start with company & year</button><button class="btn-secondary" onclick="workspace.showFilingHelp()">First time? Read the guide</button><span id="saveStatus" role="status">No filing saved yet</span></div>
   </section>
+  <!-- ── First Page / Welcome Dashboard ────────────────────────────────────── -->
+  <div id="welcomeDashboard" class="welcome-dashboard">
+    <div class="welcome-dashboard-inner">
+      <div class="dash-hero">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap;">
+          <div>
+            <h1>DigiHub KVK Financial Reporting Workspace</h1>
+            <p>Prepare, tag, validate, and rollover Dutch SBR / iXBRL annual accounts with Chamber of Commerce (KvK) compliance.</p>
+          </div>
+          <button class="btn-primary" onclick="workspace.openNewCompanyModal()">+ New Company</button>
+        </div>
+      </div>
+
+      <!-- Active Client Banner -->
+      <div id="dashActiveBox" class="dash-active-box empty">
+        <div class="dash-active-info">
+          <div class="dash-active-badge" id="dashActiveBadge">STATUS: NO ACTIVE ENTITY</div>
+          <div class="dash-active-title" id="dashActiveEntityTitle">No Client Company Selected</div>
+          <div class="dash-active-desc" id="dashActiveEntityDesc">You have not selected an active client company yet. Pick an existing client from the directory below or start a new company filing.</div>
+          <div id="dashRolloverNotice" style="display:none;" class="dash-rollover-notice"></div>
+        </div>
+        <div class="dash-active-actions" id="dashActiveActions">
+          <button class="btn-primary" onclick="workspace.openNewCompanyModal()">+ Start New Company</button>
+          <button class="btn-secondary" onclick="workspace.openCompanyHub()">Browse Directory</button>
+        </div>
+      </div>
+
+      <!-- 4-Step Instructions: Where should I start? -->
+      <div>
+        <div class="dash-section-title" style="margin-bottom:0.75rem;">Where to Start: 4-Step Filing Process</div>
+        <div class="dash-steps-grid">
+          <div class="dash-step-card">
+            <div class="step-num">1</div>
+            <div>
+              <strong>1. Set Company & Year</strong>
+              <p>Enter your 8-digit KVK number, company name, reporting period (e.g. 2025 or 2026), and reporting profile (Micro, Small, Medium, Large).</p>
+            </div>
+            <button class="btn-secondary btn-sm" onclick="workspace.openEntityModal()">Set Company & Year</button>
+          </div>
+          <div class="dash-step-card">
+            <div class="step-num">2</div>
+            <div>
+              <strong>2. Upload Financial Statements</strong>
+              <p>Upload your approved Word (.docx) report. Tables, balance sheet lines, and notes are extracted automatically.</p>
+            </div>
+            <button class="btn-secondary btn-sm" onclick="document.getElementById('docUpload').click()">Upload DOCX</button>
+          </div>
+          <div class="dash-step-card">
+            <div class="step-num">3</div>
+            <div>
+              <strong>3. Review & Auto-Tag</strong>
+              <p>Use 1-click Auto-Tagging. SBR tags match automatically; compulsory KVK tags are verified in the checklist.</p>
+            </div>
+            <button class="btn-secondary btn-sm" onclick="workspace.showDocumentWorkspace()">Review Tags</button>
+          </div>
+          <div class="dash-step-card">
+            <div class="step-num">4</div>
+            <div>
+              <strong>4. Validate, Lock & Rollover</strong>
+              <p>Run validation diagnostics, sign off, and lock. Next year, roll over closing balances as comparatives with 1 click!</p>
+            </div>
+            <button class="btn-secondary btn-sm" onclick="workspace.promptRollover()">Next Year Rollover</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Embedded Client Directory -->
+      <div style="background:#ffffff; border:1px solid var(--border-color); border-radius:var(--radius); padding:1.25rem;">
+        <div class="dash-section-header">
+          <div>
+            <div class="dash-section-title">Client Companies & Filings Directory</div>
+            <div class="dash-section-sub">Manage client entities and historical reporting years. Click any badge to open, or click ✕ on a draft badge to delete unwanted test drafts.</div>
+          </div>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <input type="text" id="dashSearchInput" class="form-input" style="width:230px; padding:6px 10px; font-size:0.8rem;" placeholder="Search company or KvK…" oninput="workspace.filterCompanyList(this.value)">
+            <button class="btn-primary" style="padding:6px 12px; font-size:0.8rem;" onclick="workspace.openNewCompanyModal()">+ New Company</button>
+          </div>
+        </div>
+        <div id="dashCompanyListContainer" class="company-list-container">
+          <div class="empty-state">Loading client companies…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── Three-panel workspace ────────────────────────────────────────────── -->
-  <div class="workspace-layout">
+  <div class="workspace-layout" id="workspaceLayout" style="display:none;">
 
     <!-- Left: Document Map & Checklist -->
     <aside class="sidebar-left">
@@ -144,6 +235,7 @@
             <p style="font-size:12px;margin:0">Review each suggestion before it is saved. Suggestions currently cover table amounts.</p>
             <select id="checklistFilter" class="form-input" aria-label="Tag list filter" onchange="workspace.renderChecklist()">
               <option value="mandatory" selected>⭐ Compulsory KVK tags (Required)</option>
+              <option value="template">⭐ Prior year template tags</option>
               <option value="outstanding">All pending tags (Compulsory + Conditional)</option>
               <option value="conditional">Conditional tags</option>
               <option value="mapped">✓ Completed / Tagged</option>
@@ -161,6 +253,23 @@
 
     <!-- Centre: Document Viewer -->
     <main class="main-viewer">
+      <!-- Active Company Header Bar -->
+      <div id="viewerActiveCompanyBar" class="viewer-active-company-bar" style="display:none;">
+        <div class="viewer-active-left">
+          <span class="active-dot">●</span>
+          <span>Active Company: <strong id="barCompanyName">—</strong></span>
+          <span class="bar-pill" id="barKvkPill">KVK —</span>
+          <span class="bar-pill highlight" id="barYearPill">FY —</span>
+          <span id="barRolloverTag" class="bar-rollover-tag" style="display:none;">Rolled over from prior year</span>
+        </div>
+        <div class="viewer-active-right">
+          <button class="bar-btn" onclick="workspace.showWelcomeDashboard()" title="Return to first page dashboard">🏠 Dashboard</button>
+          <button class="bar-btn" onclick="document.getElementById('docUpload').click()" title="Upload or revise financial statements">📄 Upload DOCX</button>
+          <button class="bar-btn" onclick="workspace.promptRollover()" title="Start next reporting year">Start Next Year</button>
+          <button class="bar-btn" onclick="workspace.openCompanyHub()" title="Switch company">Switch</button>
+        </div>
+      </div>
+
       <!-- Colour-Coded Legend (Caseware standard iXBRL review model) -->
       <div style="display: flex; flex-wrap: wrap; gap: 0.85rem; justify-content: center; margin-bottom: 1rem; font-size: 0.78rem; color: #475569; background: #ffffff; padding: 0.5rem 1rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
         <span style="display: flex; align-items: center; gap: 0.35rem;" title="Standard tag matching auto-tagging default"><span style="display:inline-block; width: 12px; height: 12px; border: 2px solid var(--accent-green); background: rgba(22, 163, 74, 0.15); border-radius: 2px;"></span> 🟢 Auto / Verified</span>

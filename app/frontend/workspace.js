@@ -66,8 +66,8 @@ window.workspace = {
   async init() {
     fetch(`${this.BASE_URL}/api/profiles/supported`).then(r => r.json()).then(data => {
       const select = document.getElementById('reportingProfile');
-      if (select) select.innerHTML = '<option value="">Choose a 2025 profile…</option>' + data.profiles.map(p =>
-        `<option value="${this._esc(p.id)}">${this._esc(`${p.financial_year} / ${p.framework} / ${p.company_size} / ${p.consolidation} — preparation`)}</option>`).join('');
+      if (select) select.innerHTML = '<option value="">Choose a reporting profile (2025 / 2026)…</option>' + data.profiles.map(p =>
+        `<option value="${this._esc(p.id)}">${this._esc(`FY ${p.financial_year} / ${p.framework.toUpperCase()} / ${p.company_size} / ${p.consolidation} (${p.taxonomy_id})`)}</option>`).join('');
     }).catch(() => {});
     this.refreshTaxonomyList();
     fetch(`${this.BASE_URL}/health`).then(r=>r.json()).then(health=>{
@@ -92,6 +92,11 @@ window.workspace = {
     // Attach global event listeners for new UX features
     this._attachDocumentEventListeners();
     this.updateEntityDisplay();
+
+    // Default view: Show Welcome Dashboard for clear first page guidance if no active document
+    if (!this.state.document && !this.state.filingId) {
+      this.showWelcomeDashboard();
+    }
   },
 
   _attachDocumentEventListeners() {
@@ -558,9 +563,28 @@ window.workspace = {
         if (!current.ok) throw new Error('Cannot retrieve the active filing.');
         const snap = await current.json();
         if (doc.sha256 !== snap.document_sha256) {
+          if (snap.state === 'draft') {
+            const updateRes = await fetch(`${this.BASE_URL}/api/snapshot/${this.state.filingId}/document`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ document_sha256: doc.sha256 })
+            });
+            if (!updateRes.ok) {
+              const err = await updateRes.json().catch(() => ({}));
+              throw new Error(err.detail || 'Failed to attach new document to draft filing.');
+            }
+            const updatedSnap = await updateRes.json();
+            this._restoreSnapshot({...updatedSnap, document: doc});
+            this.showDocumentWorkspace();
+            this.renderWorkspace();
+            const yearStr = this.state.periodEnd ? this.state.periodEnd.slice(0, 4) : '';
+            this.setNavStatus(`Attached ${file.name} to active FY ${yearStr} filing.`);
+            return;
+          }
           throw new Error('This source differs from the active filing. Start a separate filing for a different document.');
         }
         this._restoreSnapshot({...snap, document: doc});
+        this.showDocumentWorkspace();
         this.renderWorkspace();
         this.setNavStatus('Source reattached to the existing filing.');
         return;
@@ -569,6 +593,7 @@ window.workspace = {
       this.state.mappings = {};
       this.state.activeNodeId = null;
 
+      this.showDocumentWorkspace();
       this.renderWorkspace();
       this.setNavStatus(`Document loaded — ${doc.nodes.length} nodes, sha256: ${doc.sha256.substring(0, 12)}…`);
 
@@ -677,7 +702,25 @@ window.workspace = {
 
   renderDocumentViewer() {
     const container = document.getElementById('documentViewer');
-    if (!this.state.document) return;
+    if (!container) return;
+    if (!this.state.document) {
+      const year = this.state.periodEnd ? this.state.periodEnd.slice(0, 4) : '';
+      const entity = this.state.entityName || 'active client';
+      const isRollover = !!this.state.rolloverFromFilingId;
+      container.innerHTML = `
+        <div class="empty-state" style="margin-top: 80px; text-align: center; max-width: 520px; margin-left: auto; margin-right: auto;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" style="margin-bottom: 1rem;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          <h3 style="font-size:1.1rem; color:var(--text-primary); margin-bottom:0.5rem;">${isRollover ? `Ready for FY ${year} Financial Statements` : `Upload Financial Statements for ${this._esc(entity)}`}</h3>
+          <p style="color:#64748b; font-size:0.85rem; line-height:1.5; margin-bottom:1.25rem;">
+            ${isRollover ? `FY ${year} draft created with comparative figures and template tags carried forward. Upload your approved Word (.docx) report for FY ${year} to begin matching tags.` : `Upload your approved Word (.docx) report to view and tag disclosures.`}
+          </p>
+          <button class="btn-primary" onclick="document.getElementById('docUpload').click()" style="padding:0.6rem 1.25rem; font-size:0.85rem;">
+            📁 Upload FY ${year || ''} DOCX
+          </button>
+        </div>
+      `;
+      return;
+    }
 
     let html = '';
     for (const node of this.state.document.nodes) {
@@ -878,13 +921,26 @@ window.workspace = {
 
     const matches = item => {
       const reviewed = item.is_satisfied || mappedQnames.has(item.concept_qname);
+      const isTemplate = Array.isArray(this.state.templateConcepts) && this.state.templateConcepts.includes(item.concept_qname);
       const visible = filter === 'all' || (filter === 'mapped' ? reviewed :
-        filter === 'outstanding' ? !reviewed && ['mandatory', 'conditional'].includes(item.status) : item.status === filter);
+        filter === 'outstanding' ? !reviewed && ['mandatory', 'conditional'].includes(item.status) :
+        filter === 'template' ? isTemplate :
+        item.status === filter);
       return visible && (!query || `${item.label_nl} ${item.label_en} ${item.concept_qname}`.toLowerCase().includes(query));
     };
     const count = allItems.filter(matches).length;
     const summary = document.getElementById('checklistSummary');
     if (summary) summary.textContent = `${count} matching items. ${count > 100 ? 'Showing the first 100; narrow your search. ' : ''}`;
+
+    let templateBanner = '';
+    if (this.state.templateConcepts && this.state.templateConcepts.length > 0) {
+      templateBanner = `
+        <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:8px 10px; margin-bottom:10px; font-size:0.75rem; color:#1e40af; display:flex; justify-content:space-between; align-items:center;">
+          <span>📋 <strong>${this.state.templateConcepts.length} tags</strong> remembered from prior approved filing template.</span>
+          <button class="btn-secondary" style="font-size:0.7rem; padding:2px 8px; cursor:pointer;" onclick="document.getElementById('checklistFilter').value='template'; workspace.renderChecklist();">Filter Template</button>
+        </div>
+      `;
+    }
 
     let progressBanner = '';
     if (compulsoryTotal > 0) {
@@ -903,7 +959,7 @@ window.workspace = {
     }
 
     let shown = 0;
-    let html = progressBanner;
+    let html = templateBanner + progressBanner;
 
     for (const section of this.state.checklistSections) {
       const items = section.items.filter(matches).slice(0, Math.max(0, 100 - shown));
@@ -1276,10 +1332,22 @@ window.workspace = {
   },
 
   _restoreSnapshot(snap) {
-    Object.assign(this.state, {profileId: snap.profile_id || null, filingId: snap.filing_id, kvkNumber: snap.kvk_number,
-      entityName: snap.entity_name, periodStart: snap.period_start, periodEnd: snap.period_end,
-      taxonomyId: snap.taxonomy_id, entryPointKey: snap.entry_point_key,
-      document: snap.document, mappings: {}, activeNodeId: null});
+    Object.assign(this.state, {
+      profileId: snap.profile_id || null,
+      filingId: snap.filing_id,
+      kvkNumber: snap.kvk_number,
+      entityName: snap.entity_name,
+      periodStart: snap.period_start,
+      periodEnd: snap.period_end,
+      taxonomyId: snap.taxonomy_id,
+      entryPointKey: snap.entry_point_key,
+      document: snap.document,
+      mappings: {},
+      activeNodeId: null,
+      rolloverFromFilingId: snap.rollover_from_filing_id || null,
+      templateConcepts: snap.template_concepts || [],
+      facts: snap.facts || []
+    });
     for (const fact of snap.facts || []) {
       const location = fact.source.location;
       const node = snap.document?.nodes.find(n => location === n.location || location.startsWith(n.location + ', Row '));
@@ -1648,9 +1716,10 @@ window.workspace = {
     const statusLabel = document.getElementById('entityStatusLabel');
     const btnRollover = document.getElementById('btnRollover');
 
+    const year = this.state.periodEnd ? this.state.periodEnd.slice(0, 4) : '';
+
     if (this.state.entityName) {
       if (nameEl) nameEl.textContent = this.state.entityName;
-      const year = this.state.periodEnd ? this.state.periodEnd.slice(0, 4) : '';
       if (yearEl) {
         if (year) {
           yearEl.textContent = `FY ${year}`;
@@ -1674,6 +1743,121 @@ window.workspace = {
     if (btnRollover) {
       btnRollover.disabled = !this.state.filingId;
     }
+
+    // Update Viewer Active Company Bar
+    const vBar = document.getElementById('viewerActiveCompanyBar');
+    if (vBar) {
+      if (this.state.entityName) {
+        vBar.style.display = 'flex';
+        const barName = document.getElementById('barCompanyName');
+        const barKvk = document.getElementById('barKvkPill');
+        const barYear = document.getElementById('barYearPill');
+        const barRoll = document.getElementById('barRolloverTag');
+        if (barName) barName.textContent = this.state.entityName;
+        if (barKvk) barKvk.textContent = `KVK ${this.state.kvkNumber || '—'}`;
+        if (barYear) barYear.textContent = year ? `FY ${year}` : '—';
+        if (barRoll) {
+          if (this.state.rolloverFromFilingId) {
+            barRoll.textContent = `✨ Carried forward comparatives & template from prior year`;
+            barRoll.style.display = '';
+          } else {
+            barRoll.style.display = 'none';
+          }
+        }
+      } else {
+        vBar.style.display = 'none';
+      }
+    }
+
+    // Update Dashboard Active Client Box
+    this.renderWelcomeDashboard();
+  },
+
+  // ── First Page / Welcome Dashboard Management ──────────────────────────────
+  showWelcomeDashboard() {
+    this._currentView = 'dashboard';
+    const dash = document.getElementById('welcomeDashboard');
+    const layout = document.getElementById('workspaceLayout');
+    const journey = document.querySelector('.journey');
+    const toggleLabel = document.getElementById('btnViewToggleLabel');
+
+    if (dash) dash.style.display = 'flex';
+    if (layout) layout.style.display = 'none';
+    if (journey) journey.style.display = 'none';
+    if (toggleLabel) toggleLabel.textContent = this.state.document ? 'Workspace' : 'Dashboard';
+
+    this.renderWelcomeDashboard();
+    this.renderCompanyHub();
+  },
+
+  showDocumentWorkspace() {
+    this._currentView = 'workspace';
+    const dash = document.getElementById('welcomeDashboard');
+    const layout = document.getElementById('workspaceLayout');
+    const journey = document.querySelector('.journey');
+    const toggleLabel = document.getElementById('btnViewToggleLabel');
+
+    if (dash) dash.style.display = 'none';
+    if (layout) layout.style.display = 'flex';
+    if (journey) journey.style.display = '';
+    if (toggleLabel) toggleLabel.textContent = 'Dashboard';
+
+    this.renderWorkspace();
+  },
+
+  toggleDashboardView() {
+    if (this._currentView === 'workspace') {
+      this.showWelcomeDashboard();
+    } else {
+      this.showDocumentWorkspace();
+    }
+  },
+
+  renderWelcomeDashboard() {
+    const box = document.getElementById('dashActiveBox');
+    const badge = document.getElementById('dashActiveBadge');
+    const title = document.getElementById('dashActiveEntityTitle');
+    const desc = document.getElementById('dashActiveEntityDesc');
+    const actions = document.getElementById('dashActiveActions');
+    const rollNotice = document.getElementById('dashRolloverNotice');
+    if (!box) return;
+
+    const year = this.state.periodEnd ? this.state.periodEnd.slice(0, 4) : '';
+    const factCount = Object.keys(this.state.mappings).length || (this.state.facts ? this.state.facts.length : 0);
+
+    if (this.state.entityName && this.state.filingId) {
+      box.className = 'dash-active-box active';
+      if (badge) badge.textContent = 'ACTIVE CLIENT ENTITY';
+      if (title) title.textContent = this.state.entityName;
+      if (desc) desc.textContent = `KVK: ${this.state.kvkNumber} · Financial Year: FY ${year} · Status: ${(this.state.filingState || 'draft').toUpperCase()} · ${factCount} fact(s) mapped`;
+      if (rollNotice) {
+        if (this.state.rolloverFromFilingId) {
+          rollNotice.textContent = `✨ Rolled over from prior financial year: ${factCount} comparative facts carried forward. Prior year template remembered for ${year || ''} NT21 taxonomy rules.`;
+          rollNotice.style.display = 'inline-block';
+        } else {
+          rollNotice.style.display = 'none';
+        }
+      }
+      if (actions) {
+        actions.innerHTML = `
+          <button class="btn-primary" onclick="workspace.showDocumentWorkspace()">📄 Go to Document & Tags</button>
+          <button class="btn-secondary" onclick="workspace.openEntityModal()">Edit Settings</button>
+          <button class="btn-secondary" onclick="workspace.promptRollover()">Start Next Year</button>
+        `;
+      }
+    } else {
+      box.className = 'dash-active-box empty';
+      if (badge) badge.textContent = 'STATUS: NO ACTIVE ENTITY';
+      if (title) title.textContent = 'No Client Company Selected';
+      if (desc) desc.textContent = 'You have not selected an active client company yet. Pick an existing client from the directory below or start a new company filing.';
+      if (rollNotice) rollNotice.style.display = 'none';
+      if (actions) {
+        actions.innerHTML = `
+          <button class="btn-primary" onclick="workspace.openNewCompanyModal()">+ Start New Company</button>
+          <button class="btn-secondary" onclick="workspace.openCompanyHub()">Browse Directory</button>
+        `;
+      }
+    }
   },
 
   // ── Company Directory & Yearly Management ──────────────────────────────────
@@ -1691,8 +1875,9 @@ window.workspace = {
   },
 
   async renderCompanyHub(filter = '') {
-    const container = document.getElementById('companyListContainer');
-    if (!container) return;
+    const hubContainer = document.getElementById('companyListContainer');
+    const dashContainer = document.getElementById('dashCompanyListContainer');
+    if (!hubContainer && !dashContainer) return;
     try {
       if (!this._cachedCompanies || !filter) {
         const res = await fetch(`${this.BASE_URL}/api/companies`);
@@ -1709,23 +1894,28 @@ window.workspace = {
         );
       }
 
+      const emptyHtml = `
+        <div class="empty-state" style="padding: 2.5rem 1rem;">
+          ${q ? 'No matching companies found for "' + this._esc(q) + '".' : 'No client companies found yet. Click "+ New Company" to start one.'}
+        </div>`;
+
       if (!list.length) {
-        container.innerHTML = `
-          <div class="empty-state" style="padding: 2.5rem 1rem;">
-            ${q ? 'No matching companies found for "' + this._esc(q) + '".' : 'No client companies found yet. Click "+ New Company" to start one.'}
-          </div>`;
+        if (hubContainer) hubContainer.innerHTML = emptyHtml;
+        if (dashContainer) dashContainer.innerHTML = emptyHtml;
         return;
       }
 
-      container.innerHTML = list.map(c => {
+      const cardsHtml = list.map(c => {
         const isActive = c.kvk_number === this.state.kvkNumber;
         const filings = c.filings || [];
         const latestFilingId = c.latest_filing_id || (filings[0] ? filings[0].filing_id : null);
+        const emptyDraftsCount = filings.filter(f => f.state === 'draft' && f.fact_count === 0).length;
+
         return `
           <div class="company-card ${isActive ? 'active-company' : ''}">
             <div class="company-card-header">
               <div class="company-card-title">
-                <div style="display:flex; align-items:center; gap:0.5rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                   <strong>${this._esc(c.entity_name)}</strong>
                   ${isActive ? '<span style="font-size:0.68rem; background:#dbeafe; color:#1e40af; padding:1px 6px; border-radius:3px; font-weight:600;">ACTIVE</span>' : ''}
                 </div>
@@ -1735,7 +1925,12 @@ window.workspace = {
                   ${c.latest_year ? `<span>Latest FY ${this._esc(String(c.latest_year))}</span>` : ''}
                 </div>
               </div>
-              <div style="display:flex; gap:0.5rem; align-items:center;">
+              <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap;">
+                ${emptyDraftsCount > 1 ? `
+                  <button class="cleanup-btn-small" onclick="event.stopPropagation(); workspace.cleanupEmptyDrafts('${this._esc(c.kvk_number)}')" title="Delete all empty 0-fact drafts for this company">
+                    Clean Empty Drafts (${emptyDraftsCount})
+                  </button>
+                ` : ''}
                 ${latestFilingId ? `
                   <button class="rollover-btn-small" onclick="workspace.promptRollover('${this._esc(latestFilingId)}')" title="Rollover latest filing into next financial year">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
@@ -1756,6 +1951,9 @@ window.workspace = {
                     <strong>FY ${this._esc(String(year))}</strong>
                     <span class="badge-status ${this._esc(statusClass)}">${this._esc(f.state)}</span>
                     <span style="font-size:0.7rem; color:${isCurrentFiling ? '#ffffff' : '#64748b'};">(${f.fact_count} facts)</span>
+                    ${f.state === 'draft' ? `
+                      <button class="delete-filing-btn" title="Delete this draft filing" onclick="event.stopPropagation(); workspace.deleteFiling('${this._esc(f.filing_id)}', '${this._esc(String(year))}', '${this._esc(f.state)}')">✕</button>
+                    ` : ''}
                   </div>
                 `;
               }).join('')}
@@ -1763,9 +1961,78 @@ window.workspace = {
           </div>
         `;
       }).join('');
+
+      if (hubContainer) hubContainer.innerHTML = cardsHtml;
+      if (dashContainer) dashContainer.innerHTML = cardsHtml;
     } catch (e) {
-      container.innerHTML = `<div class="empty-state" style="color:var(--text-error); padding:2rem;">Failed to load company directory: ${this._esc(e.message)}</div>`;
+      const errHtml = `<div class="empty-state" style="color:var(--text-error); padding:2rem;">Failed to load company directory: ${this._esc(e.message)}</div>`;
+      if (hubContainer) hubContainer.innerHTML = errHtml;
+      if (dashContainer) dashContainer.innerHTML = errHtml;
     }
+  },
+
+  async deleteFiling(filingId, year, state = 'draft') {
+    if (!confirm(`Are you sure you want to delete this ${state} filing for FY ${year || ''}? This action cannot be undone.`)) {
+      return;
+    }
+    this.setNavStatus('Deleting filing…', 'loading');
+    try {
+      const res = await fetch(`${this.BASE_URL}/api/filings/${encodeURIComponent(filingId)}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'Failed to delete filing.');
+      }
+
+      this._cachedCompanies = null; // Invalidate cache
+
+      if (this.state.filingId === filingId) {
+        this.newFiling();
+        this.setNavStatus(`Deleted FY ${year} ${state} filing. Workspace reset.`);
+      } else {
+        this.setNavStatus(`Deleted FY ${year} ${state} filing.`);
+      }
+
+      await this.renderCompanyHub();
+      this.renderWelcomeDashboard();
+    } catch (e) {
+      this.setNavStatus(`Delete failed: ${e.message}`, 'error');
+      alert(`Delete failed: ${e.message}`);
+    }
+  },
+
+  async cleanupEmptyDrafts(kvkNumber) {
+    if (!this._cachedCompanies) {
+      await this.renderCompanyHub();
+    }
+    const company = (this._cachedCompanies || []).find(c => c.kvk_number === kvkNumber);
+    if (!company) return;
+    const emptyDrafts = (company.filings || []).filter(f => f.state === 'draft' && f.fact_count === 0);
+    if (!emptyDrafts.length) {
+      alert('No empty 0-fact drafts found to clean up.');
+      return;
+    }
+    if (!confirm(`Found ${emptyDrafts.length} empty draft(s) with 0 facts for ${company.entity_name}. Delete all of them?`)) {
+      return;
+    }
+    this.setNavStatus(`Deleting ${emptyDrafts.length} empty drafts…`, 'loading');
+    let deletedCount = 0;
+    for (const f of emptyDrafts) {
+      try {
+        await fetch(`${this.BASE_URL}/api/filings/${encodeURIComponent(f.filing_id)}`, { method: 'DELETE' });
+        deletedCount++;
+        if (this.state.filingId === f.filing_id) {
+          this.newFiling();
+        }
+      } catch (e) {
+        console.error('Failed to delete draft', f.filing_id, e);
+      }
+    }
+    this._cachedCompanies = null;
+    await this.renderCompanyHub();
+    this.renderWelcomeDashboard();
+    this.setNavStatus(`Cleaned up ${deletedCount} empty draft(s).`);
   },
 
   filterCompanyList(query) {
@@ -1783,6 +2050,7 @@ window.workspace = {
       }
       const snap = await res.json();
       this._restoreSnapshot(snap);
+      this.showDocumentWorkspace();
       this.renderWorkspace();
       await this.fetchRequirements();
       this.updateEntityDisplay();
@@ -1902,6 +2170,7 @@ window.workspace = {
       this._cachedCompanies = null; // Invalidate cache so hub refreshes next time
 
       this._restoreSnapshot(newSnap);
+      this.showDocumentWorkspace();
       this.renderWorkspace();
       await this.fetchRequirements();
       this.updateEntityDisplay();
