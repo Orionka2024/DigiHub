@@ -544,7 +544,6 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); margin-
   background: transparent !important;
   backdrop-filter: none !important;
   pointer-events: none !important;
-  display: flex !important;
   justify-content: flex-end !important;
   align-items: stretch !important;
   padding: 0 !important;
